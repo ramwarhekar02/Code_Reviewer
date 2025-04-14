@@ -19,7 +19,7 @@
 
       try {
         const response = await axios.post(
-          "https://code-reviewer-3oqg.onrender.com/ai/get-review",
+          "https://code-reviewer-57sc.onrender.com/ai/get-review",
           { code }
         );
         setReview(response.data);
