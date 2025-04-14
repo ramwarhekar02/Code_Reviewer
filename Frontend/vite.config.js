@@ -11,7 +11,6 @@ export default defineConfig({
   ],
   build: {
     rollupOptions: {
-      external: ['react-simple-code-editor'],
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom'], 
