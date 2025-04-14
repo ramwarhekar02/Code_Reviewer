@@ -24,7 +24,7 @@
         );
         setReview(response.data);
       } catch (error) {
-        setReview("⚠️ Error: Unable to fetch the review. Please try again.");
+        setReview("Error: Unable to fetch the review. Please try again.");
       }
 
       setLoading(false);
@@ -33,7 +33,7 @@
     return (
       <main className="w-full h-screen bg-zinc-800 flex flex-col items-center p-4">
         <div className="w-full flex justify-center items-center px-6">
-          <h1 className="text-white text-center text-4xl font-extrabold pb-6 bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text shadow-lg">
+          <h1 className="text-white text-4xl font-extrabold pb-6 bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text shadow-lg">
             CodeSense
           </h1>
         </div>
