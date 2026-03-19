@@ -3,7 +3,7 @@ import axios from "axios";
 import Editor from "@monaco-editor/react";
 import Markdown from "react-markdown";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://code-reviewer-57sc.onrender.com";
 
 const LANGUAGE_OPTIONS = [
   { value: "javascript", label: "JavaScript", monaco: "javascript" },
