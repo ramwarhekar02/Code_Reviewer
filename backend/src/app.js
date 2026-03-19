@@ -1,16 +1,15 @@
-const express = require('express');
-const aiRoutes = require("./routes/ai.routes")
-const app = express();
-const cors = require('cors');
+const express = require("express");
+const cors = require("cors");
+const aiRoutes = require("./routes/ai.routes");
 
-app.use(express.json());
+const app = express();
+
 app.use(cors());
+app.use(express.json({ limit: "1mb" }));
 app.use("/ai", aiRoutes);
 
-app.post("/" , (req, res)=> { 
-    res.send("Hello World");
-})
-
+app.get("/", (req, res) => {
+  res.json({ status: "ok", service: "Code Reviewer AI API" });
+});
 
 module.exports = app;
-

@@ -1,12 +1,58 @@
 const aiService = require("../services/ai.service");
 
-module.exports.getReview = async (req, res)=> { 
-    const code = req.body.code;
+function getPayload(req) {
+  return {
+    code: req.body.code,
+    language: req.body.language || "javascript",
+    cursorLine: req.body.cursorLine,
+    messages: req.body.messages || []
+  };
+}
 
-    if(!code) { 
-        return res.status(400).send("Prompt is Required");
-    }
+function validateChatRequest(req, res) {
+  if (!req.body.code && !Array.isArray(req.body.messages)) {
+    res.status(400).json({ error: "Code or chat messages are required." });
+    return false;
+  }
 
-    const response = await aiService(code);
-    res.send(response);
-} 
+  return true;
+}
+
+module.exports.suggest = async (req, res) => {
+  if (!req.body.code) {
+    return res.status(400).json({ error: "Code is required." });
+  }
+
+  try {
+    const response = await aiService.getSuggestion(getPayload(req));
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({ error: "Unable to generate suggestions right now." });
+  }
+};
+
+module.exports.review = async (req, res) => {
+  if (!req.body.code) {
+    return res.status(400).json({ error: "Code is required." });
+  }
+
+  try {
+    const response = await aiService.getReview(getPayload(req));
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({ error: "Unable to review code right now." });
+  }
+};
+
+module.exports.chat = async (req, res) => {
+  if (!validateChatRequest(req, res)) {
+    return;
+  }
+
+  try {
+    const response = await aiService.getChatResponse(getPayload(req));
+    res.json(response);
+  } catch (error) {
+    res.status(500).json({ error: "Unable to respond in chat right now." });
+  }
+};

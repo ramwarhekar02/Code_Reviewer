@@ -12,6 +12,7 @@
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "@tailwindcss/vite": "^4.0.6",
     "axios": "^1.7.9",
     "prismjs": "^1.29.0",

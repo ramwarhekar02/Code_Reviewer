@@ -1,88 +1,179 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_KEY);
-const model = genAI.getGenerativeModel({ 
-    model: "gemini-2.0-flash",
-    systemInstruction: `  
-                Here’s a solid system instruction for your AI code reviewer:
-
-                AI System Instruction: Senior Code Reviewer (7+ Years of Experience)
-
-                Role & Responsibilities:
-
-                You are an expert code reviewer with 7+ years of development experience. Your role is to analyze, review, and improve code written by developers. You focus on:
-                	•	Code Quality :- Ensuring clean, maintainable, and well-structured code.
-                	•	Best Practices :- Suggesting industry-standard coding practices.
-                	•	Efficiency & Performance :- Identifying areas to optimize execution time and resource usage.
-                	•	Error Detection :- Spotting potential bugs, security risks, and logical flaws.
-                	•	Scalability :- Advising on how to make code adaptable for future growth.
-                	•	Readability & Maintainability :- Ensuring that the code is easy to understand and modify.
-
-                Guidelines for Review:
-                	1.	Provide Constructive Feedback :- Be detailed yet concise, explaining why changes are needed.
-                	2.	Suggest Code Improvements :- Offer refactored versions or alternative approaches when possible.
-                	3.	Detect & Fix Performance Bottlenecks :- Identify redundant operations or costly computations.
-                	4.	Ensure Security Compliance :- Look for common vulnerabilities (e.g., SQL injection, XSS, CSRF).
-                	5.	Promote Consistency :- Ensure uniform formatting, naming conventions, and style guide adherence.
-                	6.	Follow DRY (Don’t Repeat Yourself) & SOLID Principles :- Reduce code duplication and maintain modular design.
-                	7.	Identify Unnecessary Complexity :- Recommend simplifications when needed.
-                	8.	Verify Test Coverage :- Check if proper unit/integration tests exist and suggest improvements.
-                	9.	Ensure Proper Documentation :- Advise on adding meaningful comments and docstrings.
-                	10.	Encourage Modern Practices :- Suggest the latest frameworks, libraries, or patterns when beneficial.
-
-                Tone & Approach:
-                	•	Be precise, to the point, and avoid unnecessary fluff.
-                	•	Provide real-world examples when explaining concepts.
-                	•	Assume that the developer is competent but always offer room for improvement.
-                	•	Balance strictness with encouragement :- highlight strengths while pointing out weaknesses.
-
-                Output Example:
-
-                ❌ Bad Code:
-                \`\`\`javascript
-                                function fetchData() {
-                    let data = fetch('/api/data').then(response => response.json());
-                    return data;
-                }
-
-                    \`\`\`
-
-                🔍 Issues:
-                	•	❌ fetch() is asynchronous, but the function doesn’t handle promises correctly.
-                	•	❌ Missing error handling for failed API calls.
-
-                ✅ Recommended Fix:
-
-                        \`\`\`javascript
-                async function fetchData() {
-                    try {
-                        const response = await fetch('/api/data');
-                        if (!response.ok) throw new Error("HTTP error! Status: $\{response.status}");
-                        return await response.json();
-                    } catch (error) {
-                        console.error("Failed to fetch data:", error);
-                        return null;
-                    }
-                }
-                   \`\`\`
-
-                💡 Improvements:
-                	•	✔ Handles async correctly using async/await.
-                	•	✔ Error handling added to manage failed requests.
-                	•	✔ Returns null instead of breaking execution.
-
-                Final Note:
-
-                Your mission is to ensure every piece of code follows high standards. Your reviews should empower developers to write better, more efficient, and scalable code while keeping performance, security, and maintainability in mind.
-
-                Would you like any adjustments based on your specific needs? 🚀 
-    `
+const model = genAI.getGenerativeModel({
+  model: "gemini-2.0-flash",
+  systemInstruction: `You are an expert senior coding assistant embedded in an IDE. Be precise, practical, and language-aware. Prioritize correctness, performance, readability, and actionable advice. When asked for JSON, respond with valid JSON only and do not wrap it in markdown fences.`
 });
 
-async function generateContent(prompt) { 
-    const result = await model.generateContent(prompt);
+const LANGUAGE_LABELS = {
+  javascript: "JavaScript",
+  java: "Java",
+  python: "Python",
+  cpp: "C++"
+};
 
-    return result.response.text();
+function getLanguageLabel(language) {
+  return LANGUAGE_LABELS[language] || language || "code";
 }
 
-module.exports = generateContent;
+function stripCodeFences(value = "") {
+  return value.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
+}
+
+function safeJsonParse(raw, fallback) {
+  try {
+    return JSON.parse(stripCodeFences(raw));
+  } catch (error) {
+    return fallback(raw);
+  }
+}
+
+async function generateText(prompt) {
+  const result = await model.generateContent(prompt);
+  return result.response.text();
+}
+
+async function generateJson(prompt, fallback) {
+  const text = await generateText(prompt);
+  return safeJsonParse(text, (raw) => fallback(raw, text));
+}
+
+function buildSuggestionFallback(raw) {
+  return {
+    summary: "AI returned an unstructured suggestion response.",
+    items: [
+      {
+        line: null,
+        severity: "info",
+        type: "suggestion",
+        title: "General feedback",
+        detail: stripCodeFences(raw),
+        suggestion: "Review the note and apply the relevant improvement manually."
+      }
+    ]
+  };
+}
+
+function buildReviewFallback(raw, language) {
+  return {
+    summary: `Structured review for ${getLanguageLabel(language)} could not be parsed.`,
+    errors: {
+      syntax: [],
+      logical: [],
+      performance: []
+    },
+    complexity: {
+      time: "Not determined",
+      space: "Not determined"
+    },
+    approach: {
+      current: "Needs manual inspection",
+      target: "Optimize after reviewing feedback"
+    },
+    suggestions: [stripCodeFences(raw)],
+    improvedCode: ""
+  };
+}
+
+function buildChatFallback(raw) {
+  return {
+    answer: stripCodeFences(raw),
+    suggestedActions: []
+  };
+}
+
+async function getSuggestion({ code, language, cursorLine }) {
+  const prompt = `Analyze the following ${getLanguageLabel(language)} code and return concise, line-aware IDE suggestions as JSON.
+
+Return exactly this JSON shape:
+{
+  "summary": "short overall note",
+  "items": [
+    {
+      "line": 1,
+      "severity": "info|warning|error",
+      "type": "syntax|logic|performance|style|improvement",
+      "title": "short title",
+      "detail": "what is happening on this line or nearby",
+      "suggestion": "clear fix or improvement",
+      "replacement": "optional replacement snippet or empty string"
+    }
+  ]
+}
+
+Rules:
+- Focus on the current cursor line ${cursorLine || "unknown"} and nearby lines first.
+- Return at most 5 items.
+- Only mention issues that are reasonably supported by the code.
+- If the code is already solid, return helpful improvement ideas instead of inventing errors.
+
+Code:
+${code}`;
+
+  return generateJson(prompt, (raw) => buildSuggestionFallback(raw));
+}
+
+async function getReview({ code, language }) {
+  const prompt = `Perform a deep review of this ${getLanguageLabel(language)} solution and return valid JSON only.
+
+Required JSON shape:
+{
+  "summary": "2-3 sentence summary",
+  "errors": {
+    "syntax": ["..."],
+    "logical": ["..."],
+    "performance": ["..."]
+  },
+  "complexity": {
+    "time": "e.g. O(n log n)",
+    "space": "e.g. O(n)"
+  },
+  "approach": {
+    "current": "Brute Force|Suboptimal|Reasonable|Optimal with explanation",
+    "target": "better target approach or confirm optimal"
+  },
+  "suggestions": ["ordered improvement items"],
+  "improvedCode": "full improved code snippet or empty string"
+}
+
+Review requirements:
+- Be precise and structured.
+- Compare brute-force vs optimal thinking when relevant.
+- Separate syntax, logical, and performance problems.
+- Mention if the current approach is already optimal.
+- Only provide improvedCode when a meaningful improvement exists.
+
+Code:
+${code}`;
+
+  return generateJson(prompt, (raw) => buildReviewFallback(raw, language));
+}
+
+async function getChatResponse({ code, language, messages }) {
+  const transcript = (messages || [])
+    .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+    .join("\n");
+
+  const prompt = `You are helping inside a coding IDE.
+Language: ${getLanguageLabel(language)}
+Current code:
+${code || "No code provided."}
+
+Conversation:
+${transcript}
+
+Return valid JSON with this shape:
+{
+  "answer": "direct helpful response in markdown",
+  "suggestedActions": ["short follow-up ideas"]
+}`;
+
+  return generateJson(prompt, (raw) => buildChatFallback(raw));
+}
+
+module.exports = {
+  getSuggestion,
+  getReview,
+  getChatResponse
+};
