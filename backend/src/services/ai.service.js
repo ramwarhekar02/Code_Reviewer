@@ -13,6 +13,28 @@ const LANGUAGE_LABELS = {
   cpp: "C++"
 };
 
+function logServiceError(scope, error, metadata = {}) {
+  console.error(`[AI Service] ${new Date().toISOString()} ${scope} failed`);
+
+  if (Object.keys(metadata).length > 0) {
+    console.error("Context:", metadata);
+  }
+
+  console.error("Message:", error?.message || error);
+
+  if (error?.stack) {
+    console.error(error.stack);
+  }
+
+  if (error?.status) {
+    console.error("Status:", error.status);
+  }
+
+  if (error?.response) {
+    console.error("Response:", error.response);
+  }
+}
+
 function getLanguageLabel(language) {
   return LANGUAGE_LABELS[language] || language || "code";
 }
@@ -30,8 +52,16 @@ function safeJsonParse(raw, fallback) {
 }
 
 async function generateText(prompt) {
-  const result = await model.generateContent(prompt);
-  return result.response.text();
+  try {
+    const result = await model.generateContent(prompt);
+    return result.response.text();
+  } catch (error) {
+    logServiceError("generateText", error, {
+      hasGeminiKey: Boolean(process.env.GOOGLE_GEMINI_KEY),
+      model: "gemini-2.0-flash"
+    });
+    throw error;
+  }
 }
 
 async function generateJson(prompt, fallback) {
@@ -111,7 +141,16 @@ Rules:
 Code:
 ${code}`;
 
-  return generateJson(prompt, (raw) => buildSuggestionFallback(raw));
+  try {
+    return await generateJson(prompt, (raw) => buildSuggestionFallback(raw));
+  } catch (error) {
+    logServiceError("getSuggestion", error, {
+      language,
+      cursorLine,
+      codeLength: code?.length || 0
+    });
+    throw error;
+  }
 }
 
 async function getReview({ code, language }) {
@@ -147,7 +186,15 @@ Review requirements:
 Code:
 ${code}`;
 
-  return generateJson(prompt, (raw) => buildReviewFallback(raw, language));
+  try {
+    return await generateJson(prompt, (raw) => buildReviewFallback(raw, language));
+  } catch (error) {
+    logServiceError("getReview", error, {
+      language,
+      codeLength: code?.length || 0
+    });
+    throw error;
+  }
 }
 
 async function getChatResponse({ code, language, messages }) {
@@ -169,7 +216,16 @@ Return valid JSON with this shape:
   "suggestedActions": ["short follow-up ideas"]
 }`;
 
-  return generateJson(prompt, (raw) => buildChatFallback(raw));
+  try {
+    return await generateJson(prompt, (raw) => buildChatFallback(raw));
+  } catch (error) {
+    logServiceError("getChatResponse", error, {
+      language,
+      codeLength: code?.length || 0,
+      messageCount: Array.isArray(messages) ? messages.length : 0
+    });
+    throw error;
+  }
 }
 
 module.exports = {
