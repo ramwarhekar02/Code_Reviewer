@@ -1,12 +1,11 @@
-import React, { StrictMode, Suspense } from 'react';
-import { createRoot } from 'react-dom/client';
-import './index.css';
+import { Navigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
-const LazyApp = React.lazy(() => import('./App.jsx'));
+export default function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth();
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <Suspense fallback={
+  if (loading) {
+    return (
       <div className="h-screen bg-gray-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center">
@@ -17,8 +16,12 @@ createRoot(document.getElementById('root')).render(
           <span className="text-sm text-gray-500">Loading...</span>
         </div>
       </div>
-    }>
-      <LazyApp />
-    </Suspense>
-  </StrictMode>,
-);
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  return children;
+}

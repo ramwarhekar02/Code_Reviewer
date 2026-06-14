@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
+    "@react-oauth/google": "^0.13.5",
     "@tailwindcss/vite": "^4.0.6",
     "axios": "^1.7.9",
     "prismjs": "^1.29.0",
@@ -20,6 +21,7 @@
     "react-dom": "^19.0.0",
     "react-icons": "^5.5.0",
     "react-markdown": "^9.0.3",
+    "react-router-dom": "^7.17.0",
     "react-syntax-highlighter": "^15.6.1",
     "tailwindcss": "^4.0.6"
   },
