@@ -40,6 +40,24 @@ export async function fetchChat(code, language, messages) {
   }
 }
 
+export async function validateExtractedCode(text) {
+  try {
+    const response = await api.post("/ai/extract-code", { text });
+    return response.data;
+  } catch (error) {
+    handleApiError(error);
+  }
+}
+
+export async function extractCodeWithVision(image) {
+  try {
+    const response = await api.post("/ai/extract-vision", { image });
+    return response.data;
+  } catch (error) {
+    handleApiError(error);
+  }
+}
+
 export async function saveReview(code, language, markdown) {
   const response = await api.post("/api/reviews", { code, language, markdown });
   return response.data;
@@ -48,4 +66,13 @@ export async function saveReview(code, language, markdown) {
 export async function fetchHistory(page = 1, limit = 20) {
   const response = await api.get(`/api/reviews?page=${page}&limit=${limit}`);
   return response.data;
+}
+
+export async function executeCode(code, language) {
+  try {
+    const response = await api.post("/api/run", { code, language });
+    return response.data;
+  } catch (error) {
+    handleApiError(error);
+  }
 }

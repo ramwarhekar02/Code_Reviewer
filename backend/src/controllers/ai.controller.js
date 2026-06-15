@@ -165,6 +165,56 @@ module.exports.review = async (req, res) => {
   }
 };
 
+module.exports.extractCode = async (req, res) => {
+  if (!req.body.text) {
+    return res.status(400).json({ error: "Extracted text is required." });
+  }
+
+  if (USE_MOCK_MODE) {
+    return res.status(401).json({
+      error: "API Configuration Error",
+      message: "No API key found. Please contact administrator to set up a valid API key."
+    });
+  }
+
+  try {
+    const response = await aiService.validateExtractedCode({ text: req.body.text });
+    res.json(response);
+  } catch (error) {
+    logControllerError("extractCode", error);
+    const errorResponse = getErrorResponse(error);
+    res.status(errorResponse.status).json({
+      error: errorResponse.error,
+      message: errorResponse.message
+    });
+  }
+};
+
+module.exports.extractVision = async (req, res) => {
+  if (!req.body.image) {
+    return res.status(400).json({ error: "Image data is required." });
+  }
+
+  if (USE_MOCK_MODE) {
+    return res.status(401).json({
+      error: "API Configuration Error",
+      message: "No API key found. Please contact administrator to set up a valid API key."
+    });
+  }
+
+  try {
+    const response = await aiService.extractCodeWithVision({ image: req.body.image });
+    res.json(response);
+  } catch (error) {
+    logControllerError("extractVision", error);
+    const errorResponse = getErrorResponse(error);
+    res.status(errorResponse.status).json({
+      error: errorResponse.error,
+      message: errorResponse.message
+    });
+  }
+};
+
 module.exports.chat = async (req, res) => {
   if (!validateChatRequest(req, res)) {
     return;

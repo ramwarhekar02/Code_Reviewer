@@ -5,8 +5,10 @@ import SuggestionPanel from "../components/SuggestionPanel";
 import ReviewPanel from "../components/ReviewPanel";
 import ChatPanel from "../components/ChatPanel";
 import UserMenu from "../components/UserMenu";
+import ToggleSwitch from "../components/ToggleSwitch";
 import { useAuth } from "../context/AuthContext";
-import { fetchSuggestions, fetchReview, fetchChat, saveReview } from "../services/api";
+import Tesseract from 'tesseract.js';
+import { fetchSuggestions, fetchReview, fetchChat, saveReview, validateExtractedCode, extractCodeWithVision, executeCode } from "../services/api";
 import { LANGUAGE_OPTIONS, STARTER_SNIPPETS, INITIAL_CHAT, INITIAL_REVIEW_MARKDOWN } from "../constants";
 
 function getPlaceholder(lang) {
@@ -16,14 +18,23 @@ function getPlaceholder(lang) {
 
 const LINE_LIMIT = 80;
 
-function extractInlineCode(markdown) {
-  const match = markdown.match(/### INLINE CODE\n+```(?:\w*)\s*([\s\S]*?)```/i);
-  if (match) return match[1].trim();
-  return null;
-}
+function detectLanguage(code) {
+  if (!code || code.trim().length < 10) return null;
+  const c = code.trim();
 
-function stripInlineCodeSection(markdown) {
-  return markdown.replace(/### INLINE CODE[\s\S]*?(?=### |$)/i, "");
+  if (/^import\s+java\.|public\s+(class|interface|enum)\s+|System\.(out|in|err)\s*\.|@(Override|Deprecated|SuppressWarnings)|String\[\]\s+args|void\s+main\s*\(/.test(c)) return "java";
+  if (/for\s*\(\s*(int|long|byte|short|double|float|boolean|char|String)\s+\w+\s*[=:]/.test(c)) return "java";
+  if(/\w+\[\]\s+\w+\s*=|new\s+\w+(?:\[\]|\[\d+\])/.test(c) && /int|String|double|float|boolean|char/.test(c)) return "java";
+
+  if (/^import\s+\w+$|^from\s+\w+\s+import|def\s+\w+\s*\(|print\s*\(|if\s+__name__\s*==/m.test(c)) return "python";
+
+  if (/#include\s*[<"]|std::|int\s+main\s*\(/.test(c)) return "cpp";
+  if (/for\s*\(\s*(int|long|double|float|char|bool|auto|size_t)\s+\w+\s*[=:]/.test(c)) return "cpp";
+  if (/cout\s*<<|cin\s*>>/.test(c)) return "cpp";
+
+  if (/=>|\bconst\s+\w+\s*=|let\s+\w+\s*=|console\.\w+|document\.\w+|function\s+\w+\s*\(/.test(c)) return "javascript";
+
+  return null;
 }
 
 function limitLines(text, max = LINE_LIMIT) {
@@ -88,11 +99,25 @@ export default function Review() {
   const [chatMessages, setChatMessages] = useState(INITIAL_CHAT);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState("");
+  const [extractionStep, setExtractionStep] = useState(null);
+  const [imageMode, setImageMode] = useState('ocr');
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [output, setOutput] = useState([]);
+  const [running, setRunning] = useState(false);
+  const [runErrorItems, setRunErrorItems] = useState([]);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const fileInputRef = useRef(null);
 
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
   const decorationsRef = useRef([]);
+  const runErrorDecorationsRef = useRef([]);
   const suggestionRequestRef = useRef(0);
+  const fileRef = useRef(null);
+  const prevCodeRef = useRef(code);
 
   // Calculate line count
   const lineCount = code.split('\n').length;
@@ -154,6 +179,22 @@ export default function Review() {
     decorationsRef.current = editorRef.current.deltaDecorations(decorationsRef.current, nextDecorations);
   }, [suggestionsData]);
 
+  useEffect(() => {
+    const placeholder = getPlaceholder(language);
+    if (!code.trim() || code === placeholder || code === STARTER_SNIPPETS[language]) return;
+
+    const prev = prevCodeRef.current;
+    prevCodeRef.current = code;
+
+    const codeDiff = Math.abs(code.length - prev.length);
+    if (codeDiff < 15) return;
+
+    const detected = detectLanguage(code);
+    if (detected && detected !== language) {
+      setLanguage(detected);
+    }
+  }, [code]);
+
   function handleEditorMount(editor, monaco) {
     editorRef.current = editor;
     monacoRef.current = monaco;
@@ -164,6 +205,11 @@ export default function Review() {
       if (isTruncating) {
         isTruncating = false;
         return;
+      }
+
+      if (runErrorDecorationsRef.current.length > 0) {
+        runErrorDecorationsRef.current = editorRef.current.deltaDecorations(runErrorDecorationsRef.current, []);
+        setRunErrorItems([]);
       }
 
       const model = editor.getModel();
@@ -203,8 +249,248 @@ export default function Review() {
     setReviewError("");
   }
 
-  async function runReview() {
+  async function processExtraction(dataUrl, file) {
+    setExtractionStep('uploading');
+    setExtracting(true);
+    setExtractError("");
+    setImagePreview(dataUrl);
+
+    if (imageMode === 'vision') {
+      try {
+        setExtractionStep('validating');
+        const result = await extractCodeWithVision(dataUrl);
+        if (result.code) {
+          setCode(result.code);
+          if (result.language && result.language !== "unknown") {
+            setLanguage(result.language);
+          }
+          setExtractionStep(null);
+          setExtracting(false);
+          setExtractError("");
+          runReview(result.code, result.language);
+          setRunning(true);
+          executeAndShowErrors(result.code, result.language).finally(() => setRunning(false));
+        } else {
+          setExtractionStep('error');
+          setExtractError("No code could be extracted from the image.");
+          setExtracting(false);
+        }
+      } catch {
+        setExtractionStep('error');
+        setExtractError("AI Vision extraction failed. Try OCR mode.");
+        setExtracting(false);
+      }
+      return;
+    }
+
+    try {
+      setExtractionStep('ocr');
+      const { data: { text } } = await Tesseract.recognize(file || dataUrl, 'eng', {
+        workerPath: '/worker.min.js',
+        langPath: '/tessdata/'
+      });
+      if (!text.trim()) {
+        setExtractionStep('error');
+        setExtractError("No text could be extracted from the image.");
+        setExtracting(false);
+        return;
+      }
+      setExtractionStep('validating');
+      const result = await validateExtractedCode(text);
+      if (result.valid) {
+        const extractedCode = result.code || text;
+        setCode(extractedCode);
+        if (result.language && result.language !== "unknown" && result.language !== "other") {
+          setLanguage(result.language);
+        }
+        setExtractionStep(null);
+        setExtracting(false);
+        setExtractError("");
+        runReview(extractedCode, result.language);
+        setRunning(true);
+        executeAndShowErrors(extractedCode, result.language).finally(() => setRunning(false));
+      } else {
+        const messages = {
+          no_code: "No code detected in the image. Please upload an image containing source code.",
+          unclear: "Code detected but the image is unclear. Please upload a clearer screenshot."
+        };
+        setExtractionStep('error');
+        setExtractError(result.message || messages[result.reason] || "Could not extract code from the image.");
+        setExtracting(false);
+      }
+    } catch {
+      setExtractionStep('error');
+      setExtractError("Failed to process the image. Try a clearer screenshot.");
+      setExtracting(false);
+    }
+  }
+
+  async function handleImageUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setExtractError("Please upload an image file.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setExtractError("Image must be under 5MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const dataUrl = e.target.result;
+      fileRef.current = file;
+      await processExtraction(dataUrl, file);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function retryExtraction() {
+    if (!imagePreview) return;
+    setExtractionStep(null);
+    setExtractError("");
+    await processExtraction(imagePreview, fileRef.current);
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    const files = e.dataTransfer?.files;
+    if (files?.length > 0) {
+      handleImageUpload({ target: { files } });
+    }
+  }
+
+  function handleDragOver(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }
+
+  function handleDragLeave(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }
+
+  function clearImage() {
+    setImagePreview(null);
+    setExtractError("");
+    setExtractionStep(null);
+  }
+
+  function parseCompilerErrors(text, lang) {
+    if (!text) return [];
+    const items = [];
+    const lines = text.split("\n");
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      if (lang === "java" || lang === "cpp") {
+        const m = line.match(/\.(?:java|cpp):(\d+):(?:\d+:)?\s*(error|warning|note):\s*(.+)/i);
+        if (m) {
+          const ln = parseInt(m[1]);
+          const severity = m[2].toLowerCase() === "warning" ? "warning" : "error";
+          const msg = m[3].trim();
+          const detail = lines[i + 1]?.trim() || msg;
+          items.push({ line: ln, severity, title: msg, detail, suggestion: "", replacement: "" });
+        }
+      }
+
+      if (lang === "python") {
+        const m = line.match(/File\s+".+",\s+line\s+(\d+)/i);
+        if (m) {
+          const ln = parseInt(m[1]);
+          const errLine = lines[i + 1] || "";
+          items.push({ line: ln, severity: "error", title: errLine, detail: errLine, suggestion: "", replacement: "" });
+        }
+      }
+    }
+
+    if (lang === "javascript") {
+      for (let i = 0; i < lines.length; i++) {
+        const m = lines[i].match(/(?:code\.js|evalmachine):(\d+)/i);
+        if (m) {
+          const ln = parseInt(m[1]);
+          const msg = (lines[i + 1] || lines[i]).replace(/.*?:\d+\s*/, "");
+          items.push({ line: ln, severity: "error", title: msg || lines[i], detail: msg || lines[i], suggestion: "", replacement: "" });
+        }
+      }
+    }
+
+    return items;
+  }
+
+  useEffect(() => {
+    if (!editorRef.current || !monacoRef.current) return;
+
+    const nextDecorations = runErrorItems
+      .filter((item) => Number.isInteger(item.line) && item.line > 0)
+      .map((item) => ({
+        range: new monacoRef.current.Range(item.line, 1, item.line, 1),
+        options: {
+          isWholeLine: true,
+          className: "editor-line-highlight severity-error",
+          glyphMarginClassName: "editor-glyph severity-error",
+          glyphMarginHoverMessage: { value: item.title || "Runtime error" }
+        }
+      }));
+
+    runErrorDecorationsRef.current = editorRef.current.deltaDecorations(runErrorDecorationsRef.current, nextDecorations);
+  }, [runErrorItems]);
+
+  async function executeAndShowErrors(execCode, execLang) {
+    if (!execCode.trim()) return;
+    try {
+      const result = await executeCode(execCode.trim(), execLang);
+      const logs = [];
+
+      if (result.error) {
+        logs.push({ type: "error", text: result.error });
+        const parsed = parseCompilerErrors(result.error, execLang);
+        if (parsed.length > 0) {
+          setRunErrorItems(parsed);
+        }
+      }
+      if (result.output) {
+        result.output.split("\n").forEach(line => logs.push({ type: "log", text: line }));
+      }
+      if (!result.output && !result.error) {
+        logs.push({ type: "log", text: "(no output)" });
+      }
+
+      setOutput(logs);
+    } catch (err) {
+      setOutput([{ type: "error", text: err.message || "Execution failed." }]);
+    }
+  }
+
+  async function runCode() {
     if (!code.trim()) {
+      setOutput([{ type: "error", text: "No code to run." }]);
+      setRunErrorItems([]);
+      return;
+    }
+    setRunning(true);
+    setOutput([]);
+    setRunErrorItems([]);
+    await executeAndShowErrors(code, language);
+    setRunning(false);
+  }
+
+  function clearOutput() {
+    setOutput([]);
+  }
+
+  async function runReview(overrideCode, overrideLang) {
+    const reviewCode = overrideCode ?? code;
+    const reviewLang = overrideLang ?? language;
+    if (!reviewCode.trim()) {
       setActiveTab("review");
       setReviewError("Editor is empty. Write some code first.");
       setReviewMarkdown(INITIAL_REVIEW_MARKDOWN);
@@ -214,17 +500,10 @@ export default function Review() {
     setReviewLoading(true);
     setReviewError("");
     try {
-      const data = await fetchReview(code, language);
+      const data = await fetchReview(reviewCode, reviewLang);
       const raw = typeof data === "string" ? data : formatReviewResponse(data);
-      const inlineCode = extractInlineCode(raw);
-      if (inlineCode && editorRef.current) {
-        const model = editorRef.current.getModel();
-        model.setValue(inlineCode);
-        setCode(inlineCode);
-      }
-      const stripped = stripInlineCodeSection(raw);
-      setReviewMarkdown(stripped);
-      saveReview(code, language, stripped).catch(() => {});
+      setReviewMarkdown(raw);
+      saveReview(reviewCode, reviewLang, raw).catch(() => {});
     } catch (error) {
       setReviewError(error.message || "Review service unavailable. Check backend.");
       setReviewMarkdown(INITIAL_REVIEW_MARKDOWN);
@@ -242,7 +521,8 @@ export default function Review() {
     setActiveTab("chat");
     setChatLoading(true);
     try {
-      const data = await fetchChat(code, language, nextMessages);
+      const chatCode = code === getPlaceholder(language) || code === STARTER_SNIPPETS[language] ? "" : code;
+      const data = await fetchChat(chatCode, language, nextMessages);
       setChatMessages((prev) => [...prev, { role: "assistant", content: data.answer || "No response." }]);
     } catch (error) {
       setChatMessages((prev) => [...prev, { role: "assistant", content: `⚠️ ${error.message || "Chat service unavailable."}` }]);
@@ -295,17 +575,19 @@ export default function Review() {
             ))}
           </select>
 
-          <button
-            type="button"
-            onClick={() => setSuggestionsEnabled((p) => !p)}
-            className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-              suggestionsEnabled
-                ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/5"
-                : "border-white/5 text-gray-500"
-            }`}
-          >
-            Suggestions {suggestionsEnabled ? "ON" : "OFF"}
-          </button>
+          <ToggleSwitch
+            enabled={imageMode === 'vision'}
+            onChange={() => setImageMode((p) => p === 'ocr' ? 'vision' : 'ocr')}
+            label={imageMode === 'vision' ? 'AI Vision' : 'OCR'}
+            size="sm"
+          />
+
+          <ToggleSwitch
+            enabled={suggestionsEnabled}
+            onChange={() => setSuggestionsEnabled((p) => !p)}
+            label="Suggestions"
+            size="sm"
+          />
 
           <UserMenu />
         </div>
@@ -345,6 +627,61 @@ export default function Review() {
               </div>
             </div>
           </div>
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => !imagePreview && !extracting && fileInputRef.current?.click()}
+            className={`shrink-0 border-b border-white/5 transition-all duration-200 cursor-pointer ${
+              isDragOver
+                ? 'bg-emerald-500/10 border-emerald-500/30'
+                : imagePreview
+                  ? 'bg-white/[0.02]'
+                  : 'bg-white/[0.01] hover:bg-white/[0.03]'
+            }`}
+          >
+            {imagePreview ? (
+              <div className="flex items-center gap-3 px-5 py-6">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setShowImageModal(true); }}
+                  className="w-14 h-9 rounded-md overflow-hidden border border-white/10 shrink-0 bg-gray-900 hover:border-emerald-500/50 transition-colors"
+                >
+                  <img src={imagePreview} alt="Uploaded" className="w-full h-full object-cover" />
+                </button>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-gray-400 font-medium">
+                    {isDragOver ? 'Drop image to replace' : 'Image Uploaded'}
+                  </p>
+                  <p className="text-xs text-gray-600">{isDragOver ? '' : 'Code extracted to editor'}</p>
+                </div>
+                <label
+                  onClick={(e) => e.stopPropagation()}
+                  className="cursor-pointer text-xs text-gray-400 hover:text-gray-200 transition-colors px-3 py-1 rounded-lg border border-white/5 hover:border-white/20"
+                >
+                  Replace
+                  <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                </label>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); clearImage(); }}
+                  className="text-xs text-gray-500 hover:text-red-400 transition-colors px-2 py-1"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center px-5 py-12 gap-2">
+                <svg className={`w-4 h-4 ${isDragOver ? 'text-emerald-400' : 'text-gray-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span className={`text-xs ${isDragOver ? 'text-emerald-400' : 'text-gray-500'}`}>
+                  {isDragOver ? 'Drop image to upload code' : 'Drop an image here or click to browse'}
+                </span>
+              </div>
+            )}
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+          </div>
           <div className="flex-1 min-h-0 relative">
             <Editor
               height="100%"
@@ -363,6 +700,55 @@ export default function Review() {
                 fontLigatures: true
               }}
             />
+          </div>
+          <div className="shrink-0 border-t border-white/5 bg-gray-950/80">
+            <div className="flex items-center justify-between px-4 py-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={runCode}
+                  disabled={running}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-emerald-500 text-gray-950 font-medium hover:bg-emerald-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                  {running ? "Running..." : "Run Code"}
+                </button>
+                {output.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearOutput}
+                    className="text-xs text-gray-500 hover:text-gray-300 transition-colors px-2 py-1"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              {output.length > 0 && (
+                <span className="text-xs text-gray-600">
+                  {output.filter(l => l.type === "error").length > 0 ? "Exited with errors" : "Finished"}
+                </span>
+              )}
+            </div>
+            {output.length > 0 && (
+              <div className="max-h-32 overflow-auto border-t border-white/5 bg-[#0d0d0d] font-mono text-xs leading-relaxed">
+                {output.map((line, i) => (
+                  <div
+                    key={i}
+                    className={`px-4 py-0.5 ${
+                      line.type === "error" ? "text-red-400" :
+                      line.type === "warn" ? "text-yellow-400" :
+                      line.type === "result" ? "text-emerald-400" :
+                      "text-gray-300"
+                    }`}
+                  >
+                    {line.type === "result" && <span className="text-gray-600 mr-1">=></span>}
+                    {line.text}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -394,11 +780,18 @@ export default function Review() {
                 reviewLoading={reviewLoading}
                 reviewError={reviewError}
                 runReview={runReview}
+                extractionState={{ step: extractionStep, error: extractError, extracting, imageMode, onToggleMode: () => setImageMode((p) => p === 'ocr' ? 'vision' : 'ocr'), onRetry: retryExtraction }}
+                runErrors={runErrorItems}
               />
             )}
             {activeTab === "suggestions" && (
               <SuggestionPanel
-                suggestionsData={suggestionsData}
+                suggestionsData={{
+                  summary: runErrorItems.length > 0
+                    ? `Found ${runErrorItems.length} error${runErrorItems.length > 1 ? "s" : ""} from execution${suggestionsData.items.length > 0 ? " + " + suggestionsData.items.length + " AI suggestion" + (suggestionsData.items.length > 1 ? "s" : "") : ""}`
+                    : suggestionsData.summary,
+                  items: [...runErrorItems, ...suggestionsData.items]
+                }}
                 suggestionsLoading={suggestionsLoading}
                 applySuggestion={applySuggestion}
               />
@@ -415,6 +808,36 @@ export default function Review() {
           </div>
         </div>
       </div>
+
+      {showImageModal && imagePreview && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+          onClick={() => setShowImageModal(false)}
+        >
+          <div
+            className="relative max-w-[90vw] max-h-[90vh] rounded-xl overflow-hidden border border-white/10 bg-gray-950 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
+              <button
+                type="button"
+                onClick={() => { clearImage(); setShowImageModal(false); }}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-500/80 text-white hover:bg-red-500 transition-colors"
+              >
+                Remove Image
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowImageModal(false)}
+                className="w-7 h-7 rounded-full bg-black/50 text-gray-300 hover:text-white flex items-center justify-center text-sm transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <img src={imagePreview} alt="Uploaded code" className="max-w-full max-h-[90vh] object-contain" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

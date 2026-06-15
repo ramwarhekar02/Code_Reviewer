@@ -106,6 +106,8 @@ function getLanguageLabel(language) {
 function stripCodeFences(value = "") {
   const match = value.match(/```(?:\w*)\s*([\s\S]*?)```/);
   if (match) return match[1].trim();
+  const braceMatch = value.match(/\{[\s\S]*\}/);
+  if (braceMatch) return braceMatch[0];
   return value.trim();
 }
 
@@ -115,6 +117,33 @@ function safeJsonParse(raw, fallback) {
   } catch (error) {
     return fallback(raw);
   }
+}
+
+function parseStructuredList(raw) {
+  const lines = raw.split("\n").filter(l => l.trim().startsWith("- Line "));
+  if (lines.length === 0) return null;
+
+  const items = lines.map((line) => {
+    const get = (key) => {
+      const re = new RegExp(`${key}:\\s*(.+?)(?:\\s*-\\s*(?:Line|Severity|Type|Title|Detail|Suggestion|Replacement|$)|$)`, "i");
+      const m = line.match(re);
+      return m ? m[1].trim() : "";
+    };
+    const lineNum = parseInt(line.match(/Line\s+(\d+)/i)?.[1]) || null;
+    const severity = (get("Severity") || "info").toLowerCase();
+    const type = (get("Type") || "improvement").toLowerCase();
+    return {
+      line: isNaN(lineNum) ? null : lineNum,
+      severity: ["error", "warning", "info"].includes(severity) ? severity : "info",
+      type: ["syntax", "logic", "performance", "style", "improvement"].includes(type) ? type : "improvement",
+      title: get("Title") || "Suggestion",
+      detail: get("Detail") || "",
+      suggestion: get("Suggestion") || get("Title") || "",
+      replacement: get("Replacement") || ""
+    };
+  });
+
+  return { summary: `Found ${items.length} suggestion${items.length > 1 ? "s" : ""}`, items };
 }
 
 async function generateText(prompt) {
@@ -142,6 +171,8 @@ async function generateJson(prompt, fallback) {
 }
 
 function buildSuggestionFallback(raw) {
+  const parsed = parseStructuredList(raw);
+  if (parsed) return parsed;
   return {
     summary: "AI returned an unstructured suggestion response.",
     items: [
@@ -169,9 +200,11 @@ async function getSuggestion({ code, language, cursorLine }) {
     return getMockSuggestions(code, language);
   }
 
-  const prompt = `Analyze the following ${getLanguageLabel(language)} code and return concise, line-aware IDE suggestions as JSON.
+  const prompt = `You are a JSON-only API. Analyze the following ${getLanguageLabel(language)} code.
 
-Return exactly this JSON shape:
+IMPORTANT: Return ONLY valid JSON. No markdown, no code fences, no backticks, no explanations before or after. JUST the JSON object.
+
+Return exactly this JSON shape (no other text):
 {
   "summary": "short overall note",
   "items": [
@@ -192,7 +225,8 @@ Rules:
 - Return at most 5 items.
 - Only mention issues that are reasonably supported by the code.
 - If the code is already solid, return helpful improvement ideas instead of inventing errors.
-- If the code is only placeholder text, comments, or has no real logic, return empty items and a summary saying "No real code to analyze yet."
+- If the code is only placeholder text, comments, or has no real logic, return empty items.
+- Keep the summary under 10 words.
 
 Code:
 ${code}`;
@@ -325,6 +359,96 @@ ${code}`;
   }
 }
 
+async function validateExtractedCode({ text }) {
+  if (USE_MOCK_MODE) {
+    return {
+      valid: false,
+      reason: "no_code",
+      message: "AI service not configured. Please set a valid API key.",
+      code: "",
+      language: "unknown"
+    };
+  }
+
+  const prompt = `You are a code validator. Analyze the following text extracted from an image via OCR.
+
+Determine:
+1. Does this text contain source code? (yes/no)
+2. If yes, is the code clearly readable? (clear/unclear)
+3. What programming language is it most likely? (javascript/python/java/cpp/other/unknown)
+4. Clean up the code text (fix OCR artifacts like I vs l, O vs 0, etc. if obvious)
+
+Return ONLY valid JSON with this exact shape:
+{
+  "valid": true/false,
+  "reason": "no_code" or "unclear" or null,
+  "message": "one short sentence explaining the issue or confirming success",
+  "code": "cleaned code or empty string",
+  "language": "javascript" or "python" or "java" or "cpp" or "other" or "unknown"
+}
+
+Rules:
+- If no code visible → valid: false, reason: "no_code"
+- If code present but too blurry/unreadable → valid: false, reason: "unclear"
+- If code present and readable → valid: true, reason: null
+- Do NOT invent code. Only return what OCR gave you.
+- Set language to "unknown" if unsure.
+
+Text from OCR:
+${text}`;
+
+  try {
+    const result = await generateJson(prompt, () => ({
+      valid: false,
+      reason: "no_code",
+      message: "Could not validate the extracted text.",
+      code: "",
+      language: "unknown"
+    }));
+    return result;
+  } catch (error) {
+    logServiceError("validateExtractedCode", error, { textLength: text?.length || 0 });
+    throw error;
+  }
+}
+
+async function extractCodeWithVision({ image }) {
+  if (USE_MOCK_MODE) {
+    return { code: "", language: "unknown" };
+  }
+
+  const prompt = `You are a code extractor. Analyze this image and extract any source code visible in it.
+Return ONLY valid JSON with this exact shape (no other text):
+{
+  "code": "the extracted source code as a string",
+  "language": "detected language: javascript, python, java, cpp, or unknown"
+}
+If no code is visible at all, return: { "code": "", "language": "unknown" }`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: image } }
+          ]
+        }
+      ],
+      max_tokens: 4096
+    });
+
+    const raw = completion.choices[0].message.content;
+    const result = safeJsonParse(raw, () => ({ code: "", language: "unknown" }));
+    return { code: result.code || "", language: result.language || "unknown" };
+  } catch (error) {
+    logServiceError("extractCodeWithVision", error, { imageLength: image?.length || 0 });
+    throw error;
+  }
+}
+
 async function getChatResponse({ code, language, messages }) {
   if (USE_MOCK_MODE) {
     return getMockChatResponse(code, language, messages);
@@ -334,7 +458,7 @@ async function getChatResponse({ code, language, messages }) {
     .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
     .join("\n");
 
-  const prompt = `You are a strict code-assistant inside a coding IDE. You ONLY answer questions related to the user's code, programming, or computer science.
+  const prompt = `You are a helpful programming assistant inside a coding IDE. You answer questions about the user's code, programming concepts, algorithms, data structures, debugging, and computer science in general.
 
 Language: ${getLanguageLabel(language)}
 Current code:
@@ -344,8 +468,9 @@ Conversation:
 ${transcript}
 
 Rules:
-- If the user asks about ANYTHING not related to code, programming, or computer science (e.g. weather, sports, news, general chat), respond with: "Sorry, I can't answer that. Please ask a question related to your code."
-- Keep all responses under 3 sentences unless the user asks for details.
+- If the user asks about something NOT related to code, programming, or computer science (e.g. weather, sports, news, general chat), respond with: "Sorry, I can only answer code-related questions."
+- If the user asks about programming concepts, data structures, algorithms, syntax, or best practices — answer helpfully even if there is no specific code in the editor.
+- Keep responses under 3 sentences unless the user asks for details.
 - Be direct and helpful. No fluff.
 
 Return valid JSON with this shape:
@@ -370,5 +495,7 @@ module.exports = {
   getSuggestion,
   getReview,
   getChatResponse,
+  validateExtractedCode,
+  extractCodeWithVision,
   USE_MOCK_MODE
 };
