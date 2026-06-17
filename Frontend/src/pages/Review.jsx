@@ -195,6 +195,7 @@ export default function Review() {
   // const [runErrorItems, setRunErrorItems] = useState([]);
   const [showImageModal, setShowImageModal] = useState(false);
   const [showLineLimitWarning, setShowLineLimitWarning] = useState(true);
+  const [isSampleLoaded, setIsSampleLoaded] = useState(false);
   const fileInputRef = useRef(null);
 
   const editorRef = useRef(null);
@@ -318,6 +319,7 @@ export default function Review() {
       }
 
       setCode(text);
+      setIsSampleLoaded(false);
     });
 
     editor.onDidChangeCursorPosition((event) => {
@@ -703,6 +705,7 @@ export default function Review() {
                 onClick={async () => {
                   const sampleCode = limitLines(STARTER_SNIPPETS.javascript);
                   setCode(sampleCode);
+                  setIsSampleLoaded(true);
                   setActiveTab("review");
                   setReviewMarkdown(CACHED_JS_REVIEW);
                   setReviewError("");
@@ -928,6 +931,7 @@ export default function Review() {
                 reviewLoading={reviewLoading}
                 reviewError={reviewError}
                 runReview={runReview}
+                isSampleLoaded={isSampleLoaded}
                 extractionState={{ step: extractionStep, error: extractError, extracting, imageMode, onToggleMode: () => setImageMode((p) => p === 'ocr' ? 'vision' : 'ocr'), onRetry: retryExtraction }}
               />
             )}

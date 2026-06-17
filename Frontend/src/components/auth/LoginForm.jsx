@@ -13,6 +13,7 @@ export default function LoginForm({ setError }) {
     e.preventDefault();
     setErr("");
     if (!email || !password) { setErr("All fields are required"); return; }
+    if (password.length < 8) { setErr("Password must be at least 8 characters"); return; }
     setLoading(true);
     try {
       await login(email, password);

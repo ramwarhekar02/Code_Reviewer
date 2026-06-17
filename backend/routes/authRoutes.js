@@ -26,8 +26,14 @@ router.post(
     body("name").trim().notEmpty().withMessage("Name is required"),
     body("email").isEmail().withMessage("Valid email is required"),
     body("password")
-      .isLength({ min: 6 })
-      .withMessage("Password must be at least 6 characters")
+      .isStrongPassword({
+        minLength: 8,
+        minLowercase: 1,
+        minUppercase: 1,
+        minNumbers: 1,
+        minSymbols: 1
+      })
+      .withMessage("Password must be at least 8 characters with 1 uppercase, 1 lowercase, 1 number, and 1 special character")
   ],
   register
 );
@@ -37,7 +43,9 @@ router.post(
   authLimiter,
   [
     body("email").isEmail().withMessage("Valid email is required"),
-    body("password").notEmpty().withMessage("Password is required")
+    body("password")
+      .isLength({ min: 8 })
+      .withMessage("Password must be at least 8 characters")
   ],
   login
 );

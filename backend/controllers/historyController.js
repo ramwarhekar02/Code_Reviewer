@@ -37,7 +37,7 @@ async function getHistory(req, res) {
       Review.countDocuments({ userId: req.user.id })
     ]);
 
-    res.json({ reviews, total, page, limit, pages: Math.ceil(total / page) });
+    res.json({ reviews, total, page, limit, pages: Math.ceil(total / limit) });
   } catch (error) {
     logger.error("getHistory error:", error.message);
     res.status(500).json({ error: "Failed to fetch history" });

@@ -1,5 +1,13 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
+
+const requirements = [
+  { label: "At least 8 characters", test: (p) => p.length >= 8 },
+  { label: "One uppercase letter", test: (p) => /[A-Z]/.test(p) },
+  { label: "One lowercase letter", test: (p) => /[a-z]/.test(p) },
+  { label: "One number", test: (p) => /\d/.test(p) },
+  { label: "One special character (!@#$%^&*)", test: (p) => /[!@#$%^&*(),.?":{}|<>]/.test(p) },
+];
 
 export default function SignupForm({ setError }) {
   const { signup } = useAuth();
@@ -9,12 +17,18 @@ export default function SignupForm({ setError }) {
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [touched, setTouched] = useState(false);
+
+  const met = useMemo(() => requirements.map((r) => r.test(password)), [password]);
+
+  const strong = met.every(Boolean);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setErr("");
+    setTouched(true);
     if (!name || !email || !password) { setErr("All fields are required"); return; }
-    if (password.length < 6) { setErr("Password must be at least 6 characters"); return; }
+    if (!strong) { setErr("Password does not meet the requirements"); return; }
     setLoading(true);
     try {
       await signup(name, email, password);
@@ -53,8 +67,9 @@ export default function SignupForm({ setError }) {
           <input
             type={show ? "text" : "password"}
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="At least 6 characters"
+            onChange={(e) => { setPassword(e.target.value); setTouched(true); }}
+            onBlur={() => setTouched(true)}
+            placeholder="Create a strong password"
             className="w-full bg-white/[0.03] border border-white/5 rounded-xl px-4 py-2.5 pr-10 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-emerald-500/30 transition-colors"
           />
           <button
@@ -75,6 +90,21 @@ export default function SignupForm({ setError }) {
           </button>
         </div>
       </div>
+      {touched && (
+        <ul className="space-y-1">
+          {requirements.map((r, i) => (
+            <li key={i} className={`flex items-center gap-1.5 text-xs transition-colors ${met[i] ? "text-emerald-400" : "text-gray-500"}`}>
+              <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                {met[i]
+                  ? <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  : <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                }
+              </svg>
+              {r.label}
+            </li>
+          ))}
+        </ul>
+      )}
       {err && <p className="text-xs text-red-400">{err}</p>}
       <button
         type="submit"

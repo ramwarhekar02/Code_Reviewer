@@ -282,7 +282,7 @@ function ExtractionStepper({ state }) {
   );
 }
 
-export default function ReviewPanel({ reviewMarkdown, reviewLoading, reviewError, runReview, extractionState, runErrors }) {
+export default function ReviewPanel({ reviewMarkdown, reviewLoading, reviewError, runReview, isSampleLoaded, extractionState, runErrors }) {
   const normalized = useMemo(() => normalizeMarkdown(reviewMarkdown), [reviewMarkdown]);
   const sections = useMemo(() => splitSections(normalized), [normalized]);
 
@@ -301,7 +301,7 @@ export default function ReviewPanel({ reviewMarkdown, reviewLoading, reviewError
           <button
             type="button"
             onClick={() => runReview()}
-            disabled={reviewLoading}
+            disabled={reviewLoading || isSampleLoaded}
             className="px-3 lg:px-4 py-1.5 text-xs font-medium rounded-lg bg-emerald-500 text-gray-950 hover:bg-emerald-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
           >
             {reviewLoading ? "Reviewing..." : "Review"}
