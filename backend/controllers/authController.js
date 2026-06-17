@@ -29,31 +29,33 @@ function hashToken(token) {
 }
 
 function setTokenCookies(res, accessToken, refreshToken) {
+  const isProduction = process.env.NODE_ENV === "production";
   res.cookie("token", accessToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
     maxAge: 15 * 60 * 1000
   });
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
     path: "/api/auth/refresh",
     maxAge: 7 * 24 * 60 * 60 * 1000
   });
 }
 
 function clearTokenCookies(res) {
+  const isProduction = process.env.NODE_ENV === "production";
   res.clearCookie("token", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict"
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax"
   });
   res.clearCookie("refreshToken", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
     path: "/api/auth/refresh"
   });
 }

@@ -5,11 +5,12 @@ const COOKIE_NAME = "csrf-token";
 const HEADER_NAME = "x-csrf-token";
 
 function generateToken(req, res) {
+  const isProduction = process.env.NODE_ENV === "production";
   const token = crypto.randomBytes(32).toString("hex");
   res.cookie(COOKIE_NAME, token, {
     httpOnly: false,
-    sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
+    sameSite: isProduction ? "none" : "lax",
+    secure: isProduction,
     path: "/"
   });
   return token;
