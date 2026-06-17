@@ -292,23 +292,23 @@ export default function ReviewPanel({ reviewMarkdown, reviewLoading, reviewError
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-5 py-4 border-b border-white/5 shrink-0">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-200">Code Review</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Deep analysis of your code</p>
+      <div className="px-3 lg:px-5 py-3 lg:py-4 border-b border-white/5 shrink-0">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="text-xs lg:text-sm font-semibold text-gray-200">Code Review</h2>
+            <p className="text-xs text-gray-500 mt-0.5 hidden sm:block">Deep analysis of your code</p>
           </div>
           <button
             type="button"
-            onClick={runReview}
+            onClick={() => runReview()}
             disabled={reviewLoading}
-            className="px-4 py-1.5 text-xs font-medium rounded-lg bg-emerald-500 text-gray-950 hover:bg-emerald-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 lg:px-4 py-1.5 text-xs font-medium rounded-lg bg-emerald-500 text-gray-950 hover:bg-emerald-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
           >
-            {reviewLoading ? "Reviewing..." : "Review Code"}
+            {reviewLoading ? "Reviewing..." : "Review"}
           </button>
         </div>
       </div>
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-auto p-3 lg:p-4">
         {extractionState?.step && extractionState.step !== "error" ? (
           <ExtractionStepper state={extractionState} />
         ) : extractionState?.step === "error" ? (

@@ -26,10 +26,21 @@ const userSchema = new mongoose.Schema({
     enum: ["manual", "google"],
     default: "manual"
   },
+  refreshToken: {
+    type: String,
+    default: null
+  },
+  role: {
+    type: String,
+    enum: ["user", "admin"],
+    default: "user"
+  },
   createdAt: {
     type: Date,
     default: Date.now
   }
 });
+
+userSchema.index({ refreshToken: 1 });
 
 module.exports = mongoose.model("User", userSchema);

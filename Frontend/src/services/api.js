@@ -1,15 +1,20 @@
 import api from "../utils/api";
 
 function handleApiError(error) {
-  if (error.response?.data) {
-    const { error: errorType, message } = error.response.data;
-    throw new Error(message || errorType || "Unknown error occurred");
+  if (error.response?.data?.message) {
+    throw new Error(error.response.data.message);
   }
-  
+  if (error.response?.status === 401) {
+    throw new Error("Session expired");
+  }
+  if (error.response?.status === 429) {
+    throw new Error("Rate limit");
+  }
+
   if (error.message === "Network Error") {
-    throw new Error("Cannot connect to the server. Please ensure the backend is running.");
+    throw new Error("Cannot connect to server");
   }
-  
+
   throw new Error(error.message || "An unexpected error occurred");
 }
 
@@ -59,12 +64,12 @@ export async function extractCodeWithVision(image) {
 }
 
 export async function saveReview(code, language, markdown) {
-  const response = await api.post("/api/reviews", { code, language, markdown });
+  const response = await api.post("/api/history", { code, language, markdown });
   return response.data;
 }
 
 export async function fetchHistory(page = 1, limit = 20) {
-  const response = await api.get(`/api/reviews?page=${page}&limit=${limit}`);
+  const response = await api.get(`/api/history?page=${page}&limit=${limit}`);
   return response.data;
 }
 

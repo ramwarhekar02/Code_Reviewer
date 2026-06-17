@@ -1,4 +1,5 @@
 const Review = require("../models/Review");
+const logger = require("../src/utils/logger");
 
 async function saveReview(req, res) {
   try {
@@ -6,10 +7,16 @@ async function saveReview(req, res) {
     if (!code || !language || !markdown) {
       return res.status(400).json({ error: "code, language, and markdown are required" });
     }
+    if (code.length > 10000) {
+      return res.status(400).json({ error: "Code exceeds maximum length of 10,000 characters" });
+    }
+    if (markdown.length > 50000) {
+      return res.status(400).json({ error: "Markdown exceeds maximum length of 50,000 characters" });
+    }
     const review = await Review.create({ userId: req.user.id, code, language, markdown });
     res.status(201).json({ reviewId: review._id });
   } catch (error) {
-    console.error("saveReview error:", error.message);
+    logger.error("saveReview error:", error.message);
     res.status(500).json({ error: "Failed to save review" });
   }
 }
@@ -30,9 +37,9 @@ async function getHistory(req, res) {
       Review.countDocuments({ userId: req.user.id })
     ]);
 
-    res.json({ reviews, total, page, limit, pages: Math.ceil(total / limit) });
+    res.json({ reviews, total, page, limit, pages: Math.ceil(total / page) });
   } catch (error) {
-    console.error("getHistory error:", error.message);
+    logger.error("getHistory error:", error.message);
     res.status(500).json({ error: "Failed to fetch history" });
   }
 }

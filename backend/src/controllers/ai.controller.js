@@ -1,50 +1,18 @@
 const aiService = require("../services/ai.service");
 const { USE_MOCK_MODE } = require("../services/ai.service");
-
-function sanitizeError(error) {
-  if (!error) return error;
-  
-  const sanitized = { ...error };
-  const message = String(error?.message || error || "");
-  
-  // Remove API keys, tokens, and other sensitive data with more aggressive patterns
-  sanitized.message = message
-    .replace(/sk-[a-zA-Z0-9_\-\.]+/g, "sk-***REDACTED***")  // OpenAI keys (sk-proj-*, sk-*)
-    .replace(/Bearer\s+[a-zA-Z0-9_\-\.]+/gi, "Bearer ***REDACTED***")
-    .replace(/api[_-]?key[=:]\s*[a-zA-Z0-9_\-\.]+/gi, "api_key=***REDACTED***")
-    .replace(/key\s*[=:]\s*[a-zA-Z0-9_\-\.]+/gi, "key=***REDACTED***")
-    .replace(/token[=:]\s*[a-zA-Z0-9_\-\.]+/gi, "token=***REDACTED***");
-  
-  if (error?.stack) {
-    sanitized.stack = error.stack
-      .replace(/sk-[a-zA-Z0-9_\-\.]+/g, "sk-***REDACTED***")
-      .replace(/Bearer\s+[a-zA-Z0-9_\-\.]+/gi, "Bearer ***REDACTED***")
-      .replace(/api[_-]?key[=:]\s*[a-zA-Z0-9_\-\.]+/gi, "api_key=***REDACTED***");
-  }
-  
-  return sanitized;
-}
+const logger = require("../utils/logger");
 
 function logControllerError(scope, error) {
-  console.error(`[AI Controller] ${new Date().toISOString()} ${scope} failed`);
-  const sanitized = sanitizeError(error);
-  console.error("Message:", sanitized?.message || error);
-
-  if (sanitized?.stack) {
-    console.error(sanitized.stack);
-  }
-
-  if (error?.response) {
-    console.error("Response:", sanitizeError(error.response));
-  }
+  logger.error(`[AI Controller] ${scope} failed:`, error.message, {
+    status: error?.status,
+    stack: error?.stack
+  });
 }
 
 function getErrorResponse(error) {
-  const sanitized = sanitizeError(error);
-  const message = sanitized?.message || "Unknown error";
+  const message = error?.message || "Unknown error";
   const status = error?.status || 500;
-  
-  // Handle API key errors
+
   if (status === 401 || message.includes("API key") || message.includes("Incorrect API")) {
     return {
       status: 401,
@@ -52,8 +20,7 @@ function getErrorResponse(error) {
       message: "The AI service is not properly configured. Please contact the administrator to set up a valid API key."
     };
   }
-  
-  // Handle rate limiting
+
   if (status === 429) {
     return {
       status: 429,
@@ -61,8 +28,7 @@ function getErrorResponse(error) {
       message: "Too many requests. Please wait a moment and try again."
     };
   }
-  
-  // Handle authentication errors
+
   if (status === 403) {
     return {
       status: 403,
@@ -70,8 +36,7 @@ function getErrorResponse(error) {
       message: "You don't have permission to access this service."
     };
   }
-  
-  // Handle server errors from OpenAI
+
   if (status >= 500) {
     return {
       status: 503,
@@ -79,17 +44,15 @@ function getErrorResponse(error) {
       message: "The AI service is temporarily unavailable. Please try again later."
     };
   }
-  
-  // Handle client errors (4xx excluding 401, 403, 429)
+
   if (status >= 400) {
     return {
-      status: status,
+      status,
       error: "Invalid Request",
       message: "The request could not be processed. Please check your input and try again."
     };
   }
-  
-  // Default error
+
   return {
     status: status || 500,
     error: "Processing Error",
@@ -111,7 +74,6 @@ function validateChatRequest(req, res) {
     res.status(400).json({ error: "Code or chat messages are required." });
     return false;
   }
-
   return true;
 }
 

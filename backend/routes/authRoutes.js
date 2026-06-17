@@ -6,7 +6,8 @@ const {
   login,
   googleAuth,
   logout,
-  getMe
+  getMe,
+  refreshToken
 } = require("../controllers/authController");
 const authMiddleware = require("../middleware/authMiddleware");
 
@@ -14,7 +15,7 @@ const router = express.Router();
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: process.env.NODE_ENV === "test" ? 1000 : 10,
   message: { message: "Too many attempts, please try again later" }
 });
 
@@ -40,6 +41,8 @@ router.post(
   ],
   login
 );
+
+router.post("/refresh", refreshToken);
 
 router.post("/google", authLimiter, googleAuth);
 

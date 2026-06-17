@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../utils/api";
+import api, { fetchCsrfToken } from "../utils/api";
 
 const AuthContext = createContext(null);
 
@@ -36,8 +36,18 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
+    fetchCsrfToken();
     checkAuth();
   }, [checkAuth]);
+
+  useEffect(() => {
+    function handleForceLogout() {
+      setUser(null);
+      navigate("/auth");
+    }
+    window.addEventListener("auth:logout", handleForceLogout);
+    return () => window.removeEventListener("auth:logout", handleForceLogout);
+  }, [navigate]);
 
   const login = async (email, password) => {
     const { data } = await api.post("/api/auth/login", { email, password });

@@ -58,11 +58,11 @@ export default function SuggestionPanel({ suggestionsData, suggestionsLoading, a
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-5 py-4 border-b border-white/5 shrink-0">
+      <div className="px-3 lg:px-5 py-3 lg:py-4 border-b border-white/5 shrink-0">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-sm font-semibold text-gray-200">Suggestions</h2>
+          <h2 className="text-xs lg:text-sm font-semibold text-gray-200">Suggestions</h2>
           {suggestionsLoading && (
-            <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 font-medium inline-flex items-center gap-1.5">
+            <span className="text-xs px-2 py-0.5 lg:px-2.5 lg:py-1 rounded-full bg-emerald-500/10 text-emerald-400 font-medium inline-flex items-center gap-1.5 shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               Analyzing
             </span>
@@ -72,7 +72,7 @@ export default function SuggestionPanel({ suggestionsData, suggestionsLoading, a
         <SeverityBar items={items} />
       </div>
 
-      <div className="flex-1 overflow-auto p-4 space-y-3">
+      <div className="flex-1 overflow-auto p-3 lg:p-4 space-y-3">
         {items.length === 0 && !suggestionsLoading ? (
           <div className="flex flex-col items-center justify-center py-14 text-center">
             <div className="w-11 h-11 rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-center mb-3">

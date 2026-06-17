@@ -1,17 +1,31 @@
 require("dotenv").config();
 const mongoose = require("mongoose");
+const logger = require("./src/utils/logger");
 const app = require('./src/app');
 
-const PORT = process.env.PORT || 5000;
+function validateEnv() {
+  const required = ["MONGO_URI", "JWT_SECRET", "PORT"];
+  const missing = required.filter((key) => !process.env[key]);
+
+  if (missing.length > 0) {
+    logger.error(`Missing required environment variables: ${missing.join(", ")}`);
+    logger.error("Server cannot start. Please check your .env file.");
+    process.exit(1);
+  }
+}
+
+validateEnv();
+
+const PORT = process.env.PORT;
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
-    console.log("✓ MongoDB connected");
+    logger.info("MongoDB connected");
     app.listen(PORT, () => {
-      console.log(`✓ Server started on port ${PORT}`);
+      logger.info(`Server started on port ${PORT}`);
     });
   })
   .catch((err) => {
-    console.error("MongoDB connection error:", err.message);
+    logger.error("MongoDB connection error:", err.message);
     process.exit(1);
   });

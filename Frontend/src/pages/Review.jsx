@@ -8,8 +8,8 @@ import UserMenu from "../components/UserMenu";
 import ToggleSwitch from "../components/ToggleSwitch";
 import { useAuth } from "../context/AuthContext";
 import Tesseract from 'tesseract.js';
-import { fetchSuggestions, fetchReview, fetchChat, saveReview, validateExtractedCode, extractCodeWithVision, executeCode } from "../services/api";
-import { LANGUAGE_OPTIONS, STARTER_SNIPPETS, INITIAL_CHAT, INITIAL_REVIEW_MARKDOWN } from "../constants";
+import { fetchSuggestions, fetchReview, fetchChat, saveReview, validateExtractedCode, extractCodeWithVision /*, executeCode */ } from "../services/api";
+import { STARTER_SNIPPETS, INITIAL_CHAT, INITIAL_REVIEW_MARKDOWN } from "../constants";
 
 function getPlaceholder(lang) {
   const comment = lang === "python" ? "#" : "//";
@@ -17,6 +17,90 @@ function getPlaceholder(lang) {
 }
 
 const LINE_LIMIT = 80;
+const MAX_CHAT_HISTORY = 10;
+
+const CACHED_JS_REVIEW = `### QUALITY SCORE
+  ⭐ Overall: 8/10
+  📊 Readability: 8/10 | ⚡ Performance: 8/10 | 🏗️ Structure: 8/10
+
+---
+
+### INLINE CODE
+\`\`\`javascript
+function twoSum(nums, target) { // ✅ Clear function name indicates purpose
+  const seen = new Map(); // ✅ Using Map for storing previously seen numbers
+
+  for (let index = 0; index < nums.length; index += 1) { // ⚠️ Consider using \`for...of\` for better readability
+    const complement = target - nums[index]; //
+
+    if (seen.has(complement)) { //
+      return [seen.get(complement), index]; //
+    }
+
+    seen.set(nums[index], index); //
+  }
+
+  return []; // ❌ Returning an empty array without a comment may confuse users
+}
+\`\`\`
+
+---
+
+### APPROACH
+  🧩 Two-pointer algorithm — A technique to find pairs that sum to a target value.
+
+---
+
+### COMPLEXITY
+  ⏱️ Time: O(n) — We loop through the numbers once
+  💾 Space: O(n) — We store numbers in a map
+
+---
+
+### SUGGESTIONS
+
+┌─────────────────────────────────────────┐
+│ 💡 #1 — Improve Empty Return Clarity   │
+│ Impact: 🟡 Medium                       │
+│ Type: Readability                       │
+│                                          │
+│ ❌ Current:                              │
+│ return [];                               │
+│                                          │
+│ ✅ Better:                               │
+│ return []; // No pairs were found        │
+│                                          │
+│ 📖 Why                                    │
+│ It helps others understand why           │
+└─────────────────────────────────────────┘
+
+---
+
+### KEY LINES
+  🔍 Max 3 most important lines:
+  → Line 9: return [seen.get(complement), index];
+     └─ This is the main return statement that provides the solution.
+
+---
+
+### WHAT YOU DID WELL
+  ✅ You used a Map for efficient lookups.
+  ✅ The code structure is clean and logical.
+  ✅ The function does exactly what it's meant to do.
+
+---
+
+### NEXT STEP
+  🎓 Learn about error handling — It will help you write more robust and user-friendly code.`;
+
+function quickHash(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return hash;
+}
 
 function detectLanguage(code) {
   if (!code || code.trim().length < 10) return null;
@@ -88,7 +172,7 @@ export default function Review() {
   const { theme } = useAuth();
   const [language, setLanguage] = useState("javascript");
   const [code, setCode] = useState(getPlaceholder("javascript"));
-  const [suggestionsEnabled, setSuggestionsEnabled] = useState(true);
+  const [suggestionsEnabled, setSuggestionsEnabled] = useState(false);
   const [activeTab, setActiveTab] = useState("review");
   const [cursorPosition, setCursorPosition] = useState({ lineNumber: 1, column: 1 });
   const [suggestionsData, setSuggestionsData] = useState({ summary: "Live suggestions will appear here as you type.", items: [] });
@@ -105,22 +189,26 @@ export default function Review() {
   const [extractionStep, setExtractionStep] = useState(null);
   const [imageMode, setImageMode] = useState('ocr');
   const [isDragOver, setIsDragOver] = useState(false);
-  const [output, setOutput] = useState([]);
-  const [running, setRunning] = useState(false);
-  const [runErrorItems, setRunErrorItems] = useState([]);
+  const [showImageSection, setShowImageSection] = useState(false);
+  // const [output, setOutput] = useState([]);
+  // const [running, setRunning] = useState(false);
+  // const [runErrorItems, setRunErrorItems] = useState([]);
   const [showImageModal, setShowImageModal] = useState(false);
+  const [showLineLimitWarning, setShowLineLimitWarning] = useState(true);
   const fileInputRef = useRef(null);
 
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
   const decorationsRef = useRef([]);
-  const runErrorDecorationsRef = useRef([]);
+  // const runErrorDecorationsRef = useRef([]);
   const suggestionRequestRef = useRef(0);
+  const lastSuggestCodeRef = useRef(null);
+  const lastReviewCodeRef = useRef(null);
   const fileRef = useRef(null);
   const prevCodeRef = useRef(code);
 
-  // Calculate line count
   const lineCount = code.split('\n').length;
+  const isOverLimit = lineCount >= LINE_LIMIT;
   const linePercentage = Math.min((lineCount / LINE_LIMIT) * 100, 100);
 
   useEffect(() => {
@@ -134,12 +222,16 @@ export default function Review() {
       return;
     }
 
+    const currentHash = quickHash(code);
+    if (currentHash === lastSuggestCodeRef.current) return;
+
     const requestId = suggestionRequestRef.current + 1;
     suggestionRequestRef.current = requestId;
 
     const timer = setTimeout(async () => {
       setSuggestionsLoading(true);
       try {
+        lastSuggestCodeRef.current = currentHash;
         const data = await fetchSuggestions(code, language, cursorPosition.lineNumber);
         if (suggestionRequestRef.current === requestId) {
           setSuggestionsData({
@@ -207,10 +299,10 @@ export default function Review() {
         return;
       }
 
-      if (runErrorDecorationsRef.current.length > 0) {
-        runErrorDecorationsRef.current = editorRef.current.deltaDecorations(runErrorDecorationsRef.current, []);
-        setRunErrorItems([]);
-      }
+      // if (runErrorDecorationsRef.current.length > 0) {
+      //   runErrorDecorationsRef.current = editorRef.current.deltaDecorations(runErrorDecorationsRef.current, []);
+      //   setRunErrorItems([]);
+      // }
 
       const model = editor.getModel();
       const text = model.getValue();
@@ -221,6 +313,7 @@ export default function Review() {
         const truncated = lines.slice(0, LINE_LIMIT).join("\n");
         model.setValue(truncated);
         setCode(truncated);
+        setShowLineLimitWarning(true);
         return;
       }
 
@@ -233,20 +326,6 @@ export default function Review() {
         column: event.position.column
       });
     });
-  }
-
-  function handleLanguageChange(event) {
-    const nextLanguage = event.target.value;
-    setLanguage((prev) => {
-      if (code === STARTER_SNIPPETS[prev]) {
-        setCode(limitLines(STARTER_SNIPPETS[nextLanguage]));
-      } else if (code === getPlaceholder(prev)) {
-        setCode(getPlaceholder(nextLanguage));
-      }
-      return nextLanguage;
-    });
-    setReviewMarkdown(INITIAL_REVIEW_MARKDOWN);
-    setReviewError("");
   }
 
   async function processExtraction(dataUrl, file) {
@@ -268,8 +347,8 @@ export default function Review() {
           setExtracting(false);
           setExtractError("");
           runReview(result.code, result.language);
-          setRunning(true);
-          executeAndShowErrors(result.code, result.language).finally(() => setRunning(false));
+          // setRunning(true);
+          // executeAndShowErrors(result.code, result.language).finally(() => setRunning(false));
         } else {
           setExtractionStep('error');
           setExtractError("No code could be extracted from the image.");
@@ -307,8 +386,8 @@ export default function Review() {
         setExtracting(false);
         setExtractError("");
         runReview(extractedCode, result.language);
-        setRunning(true);
-        executeAndShowErrors(extractedCode, result.language).finally(() => setRunning(false));
+        // setRunning(true);
+        // executeAndShowErrors(extractedCode, result.language).finally(() => setRunning(false));
       } else {
         const messages = {
           no_code: "No code detected in the image. Please upload an image containing source code.",
@@ -426,77 +505,96 @@ export default function Review() {
     return items;
   }
 
-  useEffect(() => {
-    if (!editorRef.current || !monacoRef.current) return;
+  // useEffect(() => {
+  //   if (!editorRef.current || !monacoRef.current) return;
 
-    const nextDecorations = runErrorItems
-      .filter((item) => Number.isInteger(item.line) && item.line > 0)
-      .map((item) => ({
-        range: new monacoRef.current.Range(item.line, 1, item.line, 1),
-        options: {
-          isWholeLine: true,
-          className: "editor-line-highlight severity-error",
-          glyphMarginClassName: "editor-glyph severity-error",
-          glyphMarginHoverMessage: { value: item.title || "Runtime error" }
-        }
-      }));
+  //   const nextDecorations = runErrorItems
+  //     .filter((item) => Number.isInteger(item.line) && item.line > 0)
+  //     .map((item) => ({
+  //       range: new monacoRef.current.Range(item.line, 1, item.line, 1),
+  //       options: {
+  //         isWholeLine: true,
+  //         className: "editor-line-highlight severity-error",
+  //         glyphMarginClassName: "editor-glyph severity-error",
+  //         glyphMarginHoverMessage: { value: item.title || "Runtime error" }
+  //       }
+  //     }));
 
-    runErrorDecorationsRef.current = editorRef.current.deltaDecorations(runErrorDecorationsRef.current, nextDecorations);
-  }, [runErrorItems]);
+  //     runErrorDecorationsRef.current = editorRef.current.deltaDecorations(runErrorDecorationsRef.current, nextDecorations);
+  //   }, [runErrorItems]);
 
-  async function executeAndShowErrors(execCode, execLang) {
-    if (!execCode.trim()) return;
-    try {
-      const result = await executeCode(execCode.trim(), execLang);
-      const logs = [];
+  // async function executeAndShowErrors(execCode, execLang) {
+  //   if (!execCode.trim()) return;
+  //   try {
+  //     const result = await executeCode(execCode.trim(), execLang);
+  //     const logs = [];
 
-      if (result.error) {
-        logs.push({ type: "error", text: result.error });
-        const parsed = parseCompilerErrors(result.error, execLang);
-        if (parsed.length > 0) {
-          setRunErrorItems(parsed);
-        }
-      }
-      if (result.output) {
-        result.output.split("\n").forEach(line => logs.push({ type: "log", text: line }));
-      }
-      if (!result.output && !result.error) {
-        logs.push({ type: "log", text: "(no output)" });
-      }
+  //     if (result.error) {
+  //       logs.push({ type: "error", text: result.error });
+  //       const parsed = parseCompilerErrors(result.error, execLang);
+  //       if (parsed.length > 0) {
+  //         setRunErrorItems(parsed);
+  //       }
+  //     }
+  //     if (result.output) {
+  //       result.output.split("\n").forEach(line => logs.push({ type: "log", text: line }));
+  //     }
+  //     if (!result.output && !result.error) {
+  //       logs.push({ type: "log", text: "(no output)" });
+  //     }
 
-      setOutput(logs);
-    } catch (err) {
-      setOutput([{ type: "error", text: err.message || "Execution failed." }]);
-    }
-  }
+  //     setOutput(logs);
+  //   } catch (err) {
+  //     setOutput([{ type: "error", text: err.message || "Execution failed." }]);
+  //   }
+  // }
 
-  async function runCode() {
-    if (!code.trim()) {
-      setOutput([{ type: "error", text: "No code to run." }]);
-      setRunErrorItems([]);
-      return;
-    }
-    setRunning(true);
-    setOutput([]);
-    setRunErrorItems([]);
-    await executeAndShowErrors(code, language);
-    setRunning(false);
-  }
+  // async function runCode() {
+  //   if (!code.trim()) {
+  //     setOutput([{ type: "error", text: "No code to run." }]);
+  //     setRunErrorItems([]);
+  //     return;
+  //   }
+  //   setRunning(true);
+  //   setOutput([]);
+  //   setRunErrorItems([]);
+  //   await executeAndShowErrors(code, language);
+  //   setRunning(false);
+  // }
 
-  function clearOutput() {
-    setOutput([]);
-  }
+  // function clearOutput() {
+  //   setOutput([]);
+  // }
 
   async function runReview(overrideCode, overrideLang) {
-    const reviewCode = overrideCode ?? code;
+    const reviewCode = typeof overrideCode === "string" ? overrideCode : (code ?? "");
     const reviewLang = overrideLang ?? language;
-    if (!reviewCode.trim()) {
+    const placeholder = getPlaceholder(reviewLang);
+    if (!reviewCode.trim() || reviewCode === placeholder) {
       setActiveTab("review");
-      setReviewError("Editor is empty. Write some code first.");
+      setReviewError("Please write a code or add a file");
       setReviewMarkdown(INITIAL_REVIEW_MARKDOWN);
       return;
     }
+    const reviewHash = quickHash(reviewCode);
+    if (reviewHash === lastReviewCodeRef.current && !overrideCode) {
+      setActiveTab("review");
+      setReviewError("This code was already reviewed. Edit the code first.");
+      setReviewMarkdown(INITIAL_REVIEW_MARKDOWN);
+      return;
+    }
+    lastReviewCodeRef.current = reviewHash;
+
+    if (reviewCode.trim() === STARTER_SNIPPETS.javascript.trim()) {
+      setActiveTab("review");
+      setReviewMarkdown(CACHED_JS_REVIEW);
+      setReviewError("");
+      saveReview(reviewCode, reviewLang, CACHED_JS_REVIEW).catch(() => {});
+      return;
+    }
+
     setActiveTab("review");
+    setSuggestionsEnabled(true);
     setReviewLoading(true);
     setReviewError("");
     try {
@@ -522,7 +620,10 @@ export default function Review() {
     setChatLoading(true);
     try {
       const chatCode = code === getPlaceholder(language) || code === STARTER_SNIPPETS[language] ? "" : code;
-      const data = await fetchChat(chatCode, language, nextMessages);
+      const trimmedMessages = nextMessages.length > MAX_CHAT_HISTORY
+        ? [nextMessages[0], ...nextMessages.slice(-(MAX_CHAT_HISTORY - 1))]
+        : nextMessages;
+      const data = await fetchChat(chatCode, language, trimmedMessages);
       setChatMessages((prev) => [...prev, { role: "assistant", content: data.answer || "No response." }]);
     } catch (error) {
       setChatMessages((prev) => [...prev, { role: "assistant", content: `⚠️ ${error.message || "Chat service unavailable."}` }]);
@@ -550,31 +651,23 @@ export default function Review() {
     { id: "chat", label: "Chat" }
   ];
 
+  const lineBarColor = lineCount < 60 ? "bg-emerald-500" : lineCount < 76 ? "bg-amber-500" : "bg-red-500";
+
   return (
     <div className="h-screen bg-gray-950 flex flex-col">
-      <header className="flex items-center justify-between px-5 py-3 border-b border-white/5 bg-gray-950/80 backdrop-blur-sm shrink-0">
+      <header className="flex items-center justify-between px-3 lg:px-5 py-2 lg:py-3 border-b border-white/5 bg-gray-950 shrink-0 gap-2">
         <button
           type="button"
           onClick={() => navigate("/")}
-          className="flex items-center gap-2 text-gray-400 hover:text-gray-200 transition-colors"
+          className="flex items-center gap-1.5 lg:gap-2 text-gray-400 hover:text-gray-200 transition-colors shrink-0"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
-          <span className="text-sm font-medium">CodeReviewer</span>
+          <span className="text-xs lg:text-sm font-medium hidden sm:inline">CodeReviewer</span>
         </button>
 
-        <div className="flex items-center gap-3">
-          <select
-            value={language}
-            onChange={handleLanguageChange}
-            className="bg-white/[0.03] border border-white/5 rounded-lg px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-emerald-500/30"
-          >
-            {LANGUAGE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-
+        <div className="flex items-center gap-1.5 lg:gap-3 flex-wrap justify-end">
           <ToggleSwitch
             enabled={imageMode === 'vision'}
             onChange={() => setImageMode((p) => p === 'ocr' ? 'vision' : 'ocr')}
@@ -593,39 +686,93 @@ export default function Review() {
         </div>
       </header>
 
-      <div className="flex-1 flex min-h-0">
-        <div className="flex-[65] min-w-0 border-r border-white/5 flex flex-col">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-white/5 bg-white/[0.02] shrink-0">
-            <div className="flex items-center gap-3 text-sm">
-              <span className="px-2.5 py-1 rounded-md bg-white/5 text-emerald-400 font-medium text-xs uppercase tracking-wider">
-                {LANGUAGE_OPTIONS.find(o => o.value === language)?.label || language}
+      <div className="flex-1 flex flex-col lg:flex-row min-h-0">
+        <div className="flex-1 lg:flex-[65] lg:min-w-0 border-b lg:border-b-0 lg:border-r border-white/5 flex flex-col min-h-0">
+          <div className="flex items-center justify-between px-2 lg:px-5 py-1.5 lg:py-3 border-b border-white/5 bg-white/[0.02] shrink-0 gap-1 lg:gap-2">
+            <div className="flex items-center gap-1.5 lg:gap-3 text-sm min-w-0">
+              <span className="px-1.5 lg:px-2.5 py-0.5 rounded-md bg-white/5 text-emerald-400 font-medium text-[10px] lg:text-xs uppercase tracking-wider shrink-0">
+                {language === "javascript" ? "JS" : language === "python" ? "Python" : language === "java" ? "Java" : language === "cpp" ? "C++" : language}
               </span>
-              <span className="text-gray-500 text-xs">
+              <span className="text-gray-500 text-[10px] lg:text-xs hidden sm:inline">
                 Ln {cursorPosition.lineNumber}, Col {cursorPosition.column}
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 lg:gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => setCode(limitLines(STARTER_SNIPPETS[language]))}
-                className="text-xs text-gray-400 hover:text-gray-200 transition-colors px-3 py-1.5 rounded-lg border border-white/5 hover:border-white/20"
+                onClick={async () => {
+                  const sampleCode = limitLines(STARTER_SNIPPETS.javascript);
+                  setCode(sampleCode);
+                  setActiveTab("review");
+                  setReviewMarkdown(CACHED_JS_REVIEW);
+                  setReviewError("");
+                  lastReviewCodeRef.current = quickHash(sampleCode);
+                  await saveReview(sampleCode, "javascript", CACHED_JS_REVIEW).catch(() => {});
+                }}
+                className="text-[10px] lg:text-xs text-gray-400 hover:text-gray-200 transition-colors px-1.5 lg:px-3 py-0.5 lg:py-1.5 rounded-lg border border-white/5 hover:border-white/20"
               >
-                Load Sample
+                JS Sample <span className="text-emerald-400 ml-0.5" title="Preloaded review, no AI call">*</span>
               </button>
-              <div className="flex items-center gap-2">
-                <div className="w-24 h-1.5 bg-white/5 rounded-full overflow-hidden">
+              <div className="flex items-center gap-1 lg:gap-1.5">
+                <div className="w-10 lg:w-20 h-1 bg-white/5 rounded-full overflow-hidden hidden sm:block">
                   <div
-                    className={`h-full rounded-full transition-all ${
-                      linePercentage < 50 ? 'bg-emerald-500' : linePercentage < 80 ? 'bg-amber-500' : 'bg-red-500'
-                    }`}
+                    className={`h-full rounded-full transition-all ${lineBarColor}`}
                     style={{ width: `${linePercentage}%` }}
                   />
                 </div>
-                <span className="text-xs text-gray-500 font-medium w-12 text-right">
+                <span
+                  className="text-[10px] lg:text-xs text-gray-500 font-medium w-8 lg:w-10 text-right relative group cursor-default"
+                  title="Editor caps at 80 lines for AI cost management."
+                >
                   {lineCount}/{LINE_LIMIT}
+                  <span className="absolute bottom-full -right-4 lg:right-0 mb-1.5 hidden group-hover:flex bg-gray-800 text-gray-200 text-[10px] lg:text-xs rounded-lg px-2 lg:px-3 py-1 lg:py-2 whitespace-nowrap shadow-lg border border-white/10 z-50">
+                    Editor capped at 80 lines for AI cost management.
+                  </span>
                 </span>
               </div>
             </div>
+          </div>
+          {showLineLimitWarning && isOverLimit && (
+            <div className="shrink-0 bg-amber-500/10 border-b border-amber-500/20 px-3 lg:px-5 py-2 lg:py-3 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <svg className="w-4 h-4 text-amber-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <p className="text-xs text-amber-300">
+                  Your code has been capped at 80 lines to manage AI costs. Only the first 80 lines will be reviewed.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLineLimitWarning(false)}
+                className="text-xs text-amber-400 hover:text-amber-300 transition-colors shrink-0 ml-3"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+          <div className="lg:hidden shrink-0 border-b border-white/5">
+            <button
+              type="button"
+              onClick={() => setShowImageSection((p) => !p)}
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-[10px] text-gray-500 hover:text-gray-300 transition-colors"
+            >
+              {showImageSection ? (
+                <>
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                  Switch to Code
+                </>
+              ) : (
+                <>
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  Upload Image
+                </>
+              )}
+            </button>
           </div>
           <div
             onDragOver={handleDragOver}
@@ -638,10 +785,10 @@ export default function Review() {
                 : imagePreview
                   ? 'bg-white/[0.02]'
                   : 'bg-white/[0.01] hover:bg-white/[0.03]'
-            }`}
+            } ${showImageSection || imagePreview ? '' : 'hidden'} lg:block`}
           >
             {imagePreview ? (
-              <div className="flex items-center gap-3 px-5 py-6">
+              <div className="flex items-center gap-2 lg:gap-3 px-3 lg:px-5 py-3 lg:py-6">
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setShowImageModal(true); }}
@@ -671,7 +818,7 @@ export default function Review() {
                 </button>
               </div>
             ) : (
-              <div className="flex items-center justify-center px-5 py-12 gap-2">
+              <div className="flex items-center justify-center px-3 lg:px-5 py-6 lg:py-12 gap-2">
                 <svg className={`w-4 h-4 ${isDragOver ? 'text-emerald-400' : 'text-gray-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
@@ -685,7 +832,7 @@ export default function Review() {
           <div className="flex-1 min-h-0 relative">
             <Editor
               height="100%"
-              language={LANGUAGE_OPTIONS.find(o => o.value === language)?.monaco || "javascript"}
+              language={language}
               theme={theme === "dark" ? "vs-dark" : "light"}
                value={code}
                onMount={handleEditorMount}
@@ -697,11 +844,12 @@ export default function Review() {
                 glyphMargin: true,
                 padding: { top: 18, bottom: 18 },
                 fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-                fontLigatures: true
+                fontLigatures: true,
+                lineNumbersMinChars: 3
               }}
             />
           </div>
-          <div className="shrink-0 border-t border-white/5 bg-gray-950/80">
+          {/* <div className="shrink-0 border-t border-white/5 bg-gray-950/80">
             <div className="flex items-center justify-between px-4 py-2">
               <div className="flex items-center gap-2">
                 <button
@@ -743,17 +891,17 @@ export default function Review() {
                       "text-gray-300"
                     }`}
                   >
-                    {line.type === "result" && <span className="text-gray-600 mr-1">=></span>}
+                    {line.type === "result" && <span className="text-gray-600 mr-1">{' => '}</span>}
                     {line.text}
                   </div>
                 ))}
               </div>
             )}
-          </div>
+          </div> */}
         </div>
 
-        <div className="flex-[35] min-w-0 flex flex-col">
-          <div className="flex border-b border-white/5 shrink-0">
+        <div className="flex-1 lg:flex-[35] min-w-0 flex flex-col">
+          <div className="flex border-b border-white/5 shrink-0 overflow-x-auto">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -781,17 +929,11 @@ export default function Review() {
                 reviewError={reviewError}
                 runReview={runReview}
                 extractionState={{ step: extractionStep, error: extractError, extracting, imageMode, onToggleMode: () => setImageMode((p) => p === 'ocr' ? 'vision' : 'ocr'), onRetry: retryExtraction }}
-                runErrors={runErrorItems}
               />
             )}
             {activeTab === "suggestions" && (
               <SuggestionPanel
-                suggestionsData={{
-                  summary: runErrorItems.length > 0
-                    ? `Found ${runErrorItems.length} error${runErrorItems.length > 1 ? "s" : ""} from execution${suggestionsData.items.length > 0 ? " + " + suggestionsData.items.length + " AI suggestion" + (suggestionsData.items.length > 1 ? "s" : "") : ""}`
-                    : suggestionsData.summary,
-                  items: [...runErrorItems, ...suggestionsData.items]
-                }}
+                suggestionsData={suggestionsData}
                 suggestionsLoading={suggestionsLoading}
                 applySuggestion={applySuggestion}
               />
@@ -818,18 +960,18 @@ export default function Review() {
             className="relative max-w-[90vw] max-h-[90vh] rounded-xl overflow-hidden border border-white/10 bg-gray-950 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
+            <div className="absolute top-2 right-2 lg:top-3 lg:right-3 flex items-center gap-1.5 lg:gap-2 z-10">
               <button
                 type="button"
                 onClick={() => { clearImage(); setShowImageModal(false); }}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-500/80 text-white hover:bg-red-500 transition-colors"
+                className="px-2 lg:px-3 py-1 lg:py-1.5 text-xs font-medium rounded-lg bg-red-500/80 text-white hover:bg-red-500 transition-colors"
               >
-                Remove Image
+                Remove
               </button>
               <button
                 type="button"
                 onClick={() => setShowImageModal(false)}
-                className="w-7 h-7 rounded-full bg-black/50 text-gray-300 hover:text-white flex items-center justify-center text-sm transition-colors"
+                className="w-6 h-6 lg:w-7 lg:h-7 rounded-full bg-black/50 text-gray-300 hover:text-white flex items-center justify-center text-sm transition-colors"
               >
                 ✕
               </button>

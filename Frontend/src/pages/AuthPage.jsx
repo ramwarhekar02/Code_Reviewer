@@ -19,24 +19,24 @@ export default function AuthPage() {
   return (
     <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}>
       <div className="min-h-screen bg-gray-950 flex flex-col">
-        <header className="px-6 py-4 flex items-center max-w-7xl mx-auto w-full">
+        <header className="px-4 lg:px-6 py-3 lg:py-4 flex items-center max-w-7xl mx-auto w-full">
           <button
             type="button"
             onClick={() => navigate("/")}
-            className="flex items-center gap-2 text-gray-400 hover:text-gray-200 transition-colors"
+            className="flex items-center gap-1.5 lg:gap-2 text-gray-400 hover:text-gray-200 transition-colors"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
-            <span className="text-sm font-medium">CodeReviewer</span>
+            <span className="text-xs lg:text-sm font-medium hidden sm:inline">CodeReviewer</span>
           </button>
         </header>
 
-        <main className="flex-1 flex items-center justify-center px-4">
+        <main className="flex-1 flex items-center justify-center px-3 lg:px-4">
           <div className="w-full max-w-md">
-            <div className="rounded-2xl border border-white/5 bg-white/[0.02] backdrop-blur-xl p-8">
-              <div className="text-center mb-8">
-                <div className="w-12 h-12 rounded-xl bg-emerald-500 flex items-center justify-center mx-auto mb-4">
+            <div className="rounded-2xl border border-white/5 bg-white/[0.02] backdrop-blur-xl p-5 lg:p-8">
+              <div className="text-center mb-5 lg:mb-8">
+                <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl bg-emerald-500 flex items-center justify-center mx-auto mb-3 lg:mb-4">
                   <svg className="w-7 h-7 text-gray-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                   </svg>

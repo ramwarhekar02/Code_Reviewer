@@ -57,40 +57,40 @@ export default function HistoryPage() {
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col">
-      <header className="flex items-center justify-between px-5 py-3 border-b border-white/5 bg-gray-950/80 backdrop-blur-sm shrink-0">
+      <header className="flex items-center justify-between px-3 lg:px-5 py-2 lg:py-3 border-b border-white/5 bg-gray-950 shrink-0">
         <button
           type="button"
           onClick={() => navigate("/review")}
-          className="flex items-center gap-2 text-gray-400 hover:text-gray-200 transition-colors"
+          className="flex items-center gap-1.5 lg:gap-2 text-gray-400 hover:text-gray-200 transition-colors"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
-          <span className="text-sm font-medium">CodeReviewer</span>
+          <span className="text-xs lg:text-sm font-medium hidden sm:inline">CodeReviewer</span>
         </button>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-500">Review History</span>
+        <div className="flex items-center gap-2 lg:gap-3">
+          <span className="text-xs text-gray-500 hidden sm:inline">Review History</span>
           <UserMenu />
         </div>
       </header>
 
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-lg font-semibold text-gray-200">Review History</h1>
-            <p className="text-sm text-gray-500 mt-1">All your past code reviews</p>
+      <main className="flex-1 max-w-4xl w-full mx-auto px-3 lg:px-4 py-4 lg:py-8">
+        <div className="flex items-center justify-between mb-4 lg:mb-6 gap-2">
+          <div className="min-w-0">
+            <h1 className="text-base lg:text-lg font-semibold text-gray-200">Review History</h1>
+            <p className="text-xs lg:text-sm text-gray-500 mt-0.5 lg:mt-1 hidden sm:block">All your past code reviews</p>
           </div>
           <button
             type="button"
             onClick={() => navigate("/review")}
-            className="text-xs px-4 py-2 rounded-lg bg-emerald-500 text-gray-950 font-medium hover:bg-emerald-400 transition-colors"
+            className="text-xs px-3 lg:px-4 py-1.5 lg:py-2 rounded-lg bg-emerald-500 text-gray-950 font-medium hover:bg-emerald-400 transition-colors shrink-0"
           >
             New Review
           </button>
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-20">
+          <div className="flex items-center justify-center py-12 lg:py-20">
             <div className="flex flex-col items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center animate-pulse">
                 <svg className="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -101,12 +101,12 @@ export default function HistoryPage() {
             </div>
           </div>
         ) : error ? (
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4">
-            <p className="text-sm text-red-300">{error}</p>
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 lg:p-4">
+            <p className="text-xs lg:text-sm text-red-300">{error}</p>
           </div>
         ) : reviews.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-12 h-12 rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-center mb-4">
+          <div className="flex flex-col items-center justify-center py-12 lg:py-20 text-center">
+            <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-center mb-3 lg:mb-4">
               <svg className="w-6 h-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
               </svg>
@@ -133,11 +133,11 @@ export default function HistoryPage() {
                   <button
                     type="button"
                     onClick={() => setExpandedId(isExpanded ? null : review._id)}
-                    className="w-full text-left p-4 flex items-start justify-between gap-4"
+                    className="w-full text-left p-3 lg:p-4 flex items-start justify-between gap-3 lg:gap-4"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-[11px] font-medium">
+                      <div className="flex items-center gap-1.5 lg:gap-2 mb-1 lg:mb-1.5 flex-wrap">
+                        <span className="px-1.5 lg:px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-[11px] font-medium">
                           {LANG_LABELS[review.language] || review.language}
                         </span>
                         <span className="text-xs text-gray-500">{formatDate(review.createdAt)}</span>
@@ -153,14 +153,14 @@ export default function HistoryPage() {
                   </button>
 
                   {isExpanded && (
-                    <div className="border-t border-white/5 px-4 py-4 space-y-4">
+                    <div className="border-t border-white/5 px-3 lg:px-4 py-3 lg:py-4 space-y-3 lg:space-y-4">
                       <div>
-                        <h3 className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-2">Reviewed Code</h3>
-                        <pre className="bg-[#1a1a1a] rounded-lg p-3 text-xs font-mono text-gray-300 leading-relaxed overflow-x-auto">{review.code}</pre>
+                        <h3 className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1.5 lg:mb-2">Reviewed Code</h3>
+                        <pre className="bg-[#1a1a1a] rounded-lg p-2 lg:p-3 text-xs font-mono text-gray-300 leading-relaxed overflow-x-auto">{review.code}</pre>
                       </div>
                       <div>
-                        <h3 className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-2">Review</h3>
-                        <div className="bg-[#1a1a1a] rounded-lg p-3 text-xs text-gray-400 leading-relaxed whitespace-pre-wrap font-mono">
+                        <h3 className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1.5 lg:mb-2">Review</h3>
+                        <div className="bg-[#1a1a1a] rounded-lg p-2 lg:p-3 text-xs text-gray-400 leading-relaxed whitespace-pre-wrap font-mono">
                           {review.markdown.length > 1000 ? review.markdown.slice(0, 1000) + "\n..." : review.markdown}
                         </div>
                       </div>
@@ -171,23 +171,23 @@ export default function HistoryPage() {
             })}
 
             {pages > 1 && (
-              <div className="flex items-center justify-center gap-2 pt-4">
+              <div className="flex items-center justify-center gap-2 pt-3 lg:pt-4">
                 <button
                   type="button"
                   disabled={page <= 1}
                   onClick={() => setPage((p) => p - 1)}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-white/5 text-gray-400 hover:text-gray-200 hover:border-white/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="text-xs px-2.5 lg:px-3 py-1.5 rounded-lg border border-white/5 text-gray-400 hover:text-gray-200 hover:border-white/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   Previous
                 </button>
                 <span className="text-xs text-gray-500">
-                  Page {page} of {pages}
+                  {page} / {pages}
                 </span>
                 <button
                   type="button"
                   disabled={page >= pages}
                   onClick={() => setPage((p) => p + 1)}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-white/5 text-gray-400 hover:text-gray-200 hover:border-white/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="text-xs px-2.5 lg:px-3 py-1.5 rounded-lg border border-white/5 text-gray-400 hover:text-gray-200 hover:border-white/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   Next
                 </button>

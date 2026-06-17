@@ -22,15 +22,15 @@ export default function ChatPanel({ chatMessages, chatLoading, chatInput, setCha
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-5 py-4 border-b border-white/5 shrink-0">
+      <div className="px-3 lg:px-5 py-3 lg:py-4 border-b border-white/5 shrink-0">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-semibold text-gray-200">AI Chat</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Ask questions about your code</p>
+            <h2 className="text-xs lg:text-sm font-semibold text-gray-200">AI Chat</h2>
+            <p className="text-xs text-gray-500 mt-0.5 hidden sm:block">Ask questions about your code</p>
           </div>
         </div>
       </div>
-      <div className="flex-1 overflow-auto p-4 space-y-3" ref={chatScrollerRef}>
+      <div className="flex-1 overflow-auto p-3 lg:p-4 space-y-3" ref={chatScrollerRef}>
         {chatMessages.map((message, index) => {
           const isError = message.role === "assistant" && message.content?.startsWith("⚠️");
           return (

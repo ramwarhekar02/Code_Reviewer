@@ -6,6 +6,13 @@ const os = require("os");
 const TIMEOUT_MS = 5000;
 const MAX_OUTPUT = 10240;
 
+const SPAWN_OPTIONS = {
+  timeout: TIMEOUT_MS,
+  maxBuffer: MAX_OUTPUT,
+  env: {},
+  ...(process.platform === "linux" ? { uid: 65534, gid: 65534 } : {})
+};
+
 const RUNNERS = {
   javascript: {
     extension: "js",
@@ -57,8 +64,8 @@ function randomId() {
 }
 
 function execPromise(cmd, cwd) {
-  return new Promise((resolve, reject) => {
-    exec(cmd, { cwd, timeout: TIMEOUT_MS, maxBuffer: MAX_OUTPUT }, (err, stdout, stderr) => {
+  return new Promise((resolve) => {
+    exec(cmd, { ...SPAWN_OPTIONS, cwd }, (err, stdout, stderr) => {
       resolve({ stdout, stderr, error: err });
     });
   });
@@ -157,8 +164,8 @@ async function runCode({ code, language }) {
     const { stdout, stderr, error } = await execPromise(runner.run(filePath), tmpDir);
     return { output: stdout.trim(), error: (stderr || (error ? error.message : "")).trim() };
   } finally {
-    const files = runner.cleanup ? runner.cleanup(tmpDir) : runner.cleanup(tmpDir);
-    deleteFiles(files);
+    const cleanupFiles = runner.cleanup ? runner.cleanup(tmpDir) : [tmpDir];
+    deleteFiles(cleanupFiles);
     try { fs.rmdirSync(tmpDir); } catch {}
   }
 }

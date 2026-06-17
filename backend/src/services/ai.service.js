@@ -1,8 +1,16 @@
-const OpenAI = require("openai");
+const logger = require("../utils/logger");
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+let openai = null;
+
+function getOpenAI() {
+  if (!openai) {
+    const OpenAI = require("openai");
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY
+    });
+  }
+  return openai;
+}
 
 const SYSTEM_INSTRUCTION = `You are an expert code reviewer and mentor for beginner developers. Your goal is to help beginners UNDERSTAND and GROW — not just find errors. Talk like a friendly senior developer, be encouraging never discouraging. Explain WHY not just WHAT. Use simple words, no jargon without explanation. NEVER return JSON for reviews. Always return formatted markdown with symbols and boxes exactly as instructed.`;
 
@@ -27,10 +35,10 @@ function getMockSuggestions(code, language) {
 
 function getMockReview(code, language) {
   return `### QUALITY SCORE
-⭐ Overall: 0/10
-📊 Readability: 0/10 | ⚡ Performance: 0/10 | 🏗️ Structure: 0/10
+  ⭐ Overall: 0/10
+  📊 Readability: 0/10 | ⚡ Performance: 0/10 | 🏗️ Structure: 0/10
 
-⚠️ No API key configured. Please add a valid OPENAI_API_KEY to your .env file to get real reviews.`;
+  ⚠️ No API key configured. Please add a valid OPENAI_API_KEY to your .env file to get real reviews.`;
 }
 
 function getMockChatResponse(code, language, messages) {
@@ -82,21 +90,7 @@ function sanitizeError(error) {
 }
 
 function logServiceError(scope, error, metadata = {}) {
-  console.error(`[AI Service] ${new Date().toISOString()} ${scope} failed`);
-  if (Object.keys(metadata).length > 0) {
-    console.error("Context:", metadata);
-  }
-  const sanitized = sanitizeError(error);
-  console.error("Message:", sanitized?.message || error);
-  if (sanitized?.stack) {
-    console.error(sanitized.stack);
-  }
-  if (error?.status) {
-    console.error("Status:", error.status);
-  }
-  if (error?.response) {
-    console.error("Response:", error.response);
-  }
+  logger.error(`[AI Service] ${scope} failed:`, error?.message || error, metadata);
 }
 
 function getLanguageLabel(language) {
@@ -148,7 +142,7 @@ function parseStructuredList(raw) {
 
 async function generateText(prompt) {
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: MODEL,
       messages: [
         { role: "system", content: SYSTEM_INSTRUCTION },
@@ -252,8 +246,8 @@ async function getReview({ code, language }) {
 DO NOT return JSON. Return formatted text exactly in this structure:
 
 ### QUALITY SCORE
-⭐ Overall: X/10
-📊 Readability: X/10 | ⚡ Performance: X/10 | 🏗️ Structure: X/10
+  ⭐ Overall: X/10
+  📊 Readability: X/10 | ⚡ Performance: X/10 | 🏗️ Structure: X/10
 
 [If overall score is 7 or above — give max 2 light suggestions and stop. Keep it short and positive.]
 
@@ -266,11 +260,11 @@ Never put comments on a separate line.
 ONLY annotate lines that have a genuine issue or notable pattern. Do NOT add ✅ to every line — most lines should have no comment at all.
 
 Use ONLY these symbols when annotating:
-✅ = genuinely good pattern worth highlighting (use sparingly, max 2-3 total)
-⚠️ = should fix (actual issue)
-❌ = must fix (real bug or serious problem)
-💡 = can improve (worth mentioning improvement)
-🔵 = beginner tip (one quick tip, max 1)
+  ✅ = genuinely good pattern worth highlighting (use sparingly, max 2-3 total)
+  ⚠️ = should fix (actual issue)
+  ❌ = must fix (real bug or serious problem)
+  💡 = can improve (worth mentioning improvement)
+  🔵 = beginner tip (one quick tip, max 1)
 
 Example of correct sparse format:
 \`\`\`javascript
@@ -284,13 +278,13 @@ function add(a,b){
 ---
 
 ### APPROACH
-🧩 [Approach Name] — [max 1 line simple explanation a beginner understands]
+  🧩 [Approach Name] — [max 1 line simple explanation a beginner understands]
 
 ---
 
 ### COMPLEXITY
-⏱️ Time:  O(?) — [simple human explanation in brackets]
-💾 Space: O(?) — [simple human explanation in brackets]
+  ⏱️ Time:  O(?) — [simple human explanation in brackets]
+  💾 Space: O(?) — [simple human explanation in brackets]
 
 ---
 
@@ -319,21 +313,21 @@ If score 7+ → reduce by half.
 ---
 
 ### KEY LINES
-🔍 Max 3 most important lines:
-→ Line X: [paste the exact line]
-   └─ [one line why this line matters to a beginner]
+  🔍 Max 3 most important lines:
+  → Line X: [paste the exact line]
+     └─ [one line why this line matters to a beginner]
 
 ---
 
 ### WHAT YOU DID WELL
-✅ [point 1 — something genuinely good]
-✅ [point 2 — something genuinely good]
-✅ [point 3 if applicable]
+  ✅ [point 1 — something genuinely good]
+  ✅ [point 2 — something genuinely good]
+  ✅ [point 3 if applicable]
 
 ---
 
 ### NEXT STEP
-🎓 Learn [concept name] — [one line why it will help you grow]
+  🎓 Learn [concept name] — [one line why it will help you grow]
 
 STRICT RULES:
 - Never write long paragraphs anywhere
@@ -426,8 +420,8 @@ Return ONLY valid JSON with this exact shape (no other text):
 If no code is visible at all, return: { "code": "", "language": "unknown" }`;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+    const completion = await getOpenAI().chat.completions.create({
+      model: "gpt-4o-mini",
       messages: [
         {
           role: "user",
