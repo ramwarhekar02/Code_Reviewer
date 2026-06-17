@@ -13,6 +13,7 @@ const runRoutes = require("./routes/run.routes");
 
 const app = express();
 
+app.set("trust proxy", 1);
 app.use(helmet());
 const allowedOrigin = (process.env.CLIENT_URL || "http://localhost:5173").replace(/\/+$/, "");
 app.use(cors({ origin: allowedOrigin, credentials: true }));

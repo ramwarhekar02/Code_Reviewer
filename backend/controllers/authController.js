@@ -28,34 +28,34 @@ function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-function setTokenCookies(res, accessToken, refreshToken) {
-  const isProduction = process.env.NODE_ENV === "production";
+function setTokenCookies(req, res, accessToken, refreshToken) {
+  const isSecure = req?.secure || req?.headers?.["x-forwarded-proto"] === "https";
   res.cookie("token", accessToken, {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
+    secure: isSecure,
+    sameSite: isSecure ? "none" : "lax",
     maxAge: 15 * 60 * 1000
   });
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
+    secure: isSecure,
+    sameSite: isSecure ? "none" : "lax",
     path: "/api/auth/refresh",
     maxAge: 7 * 24 * 60 * 60 * 1000
   });
 }
 
 function clearTokenCookies(res) {
-  const isProduction = process.env.NODE_ENV === "production";
+  const isSecure = true;
   res.clearCookie("token", {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax"
+    secure: isSecure,
+    sameSite: "none"
   });
   res.clearCookie("refreshToken", {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
+    secure: isSecure,
+    sameSite: "none",
     path: "/api/auth/refresh"
   });
 }
@@ -93,7 +93,7 @@ async function register(req, res) {
     const hashedRefresh = hashToken(refreshToken);
     await User.findByIdAndUpdate(user._id, { refreshToken: hashedRefresh });
 
-    setTokenCookies(res, accessToken, refreshToken);
+    setTokenCookies(req, res, accessToken, refreshToken);
 
     res.status(201).json({ user: sanitizeUser(user) });
   } catch (err) {
@@ -127,7 +127,7 @@ async function login(req, res) {
     const hashedRefresh = hashToken(refreshToken);
     await User.findByIdAndUpdate(user._id, { refreshToken: hashedRefresh });
 
-    setTokenCookies(res, accessToken, refreshToken);
+    setTokenCookies(req, res, accessToken, refreshToken);
 
     res.json({ user: sanitizeUser(user) });
   } catch (err) {
@@ -180,7 +180,7 @@ async function googleAuth(req, res) {
     const hashedRefresh = hashToken(refreshToken);
     await User.findByIdAndUpdate(user._id, { refreshToken: hashedRefresh });
 
-    setTokenCookies(res, accessToken, refreshToken);
+    setTokenCookies(req, res, accessToken, refreshToken);
 
     res.json({ user: sanitizeUser(user) });
   } catch (err) {
@@ -218,7 +218,7 @@ async function refreshToken(req, res) {
     const newHashedRefresh = hashToken(newRefreshToken);
     await User.findByIdAndUpdate(user._id, { refreshToken: newHashedRefresh });
 
-    setTokenCookies(res, newAccessToken, newRefreshToken);
+    setTokenCookies(req, res, newAccessToken, newRefreshToken);
 
     res.json({ user: sanitizeUser(user) });
   } catch (err) {
